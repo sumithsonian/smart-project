@@ -15,6 +15,11 @@ import {
   handleRest,
   handleRetrieveToken,
 } from './actions/planning'
+import {
+  handleDeclareTaskOrder,
+  handleResolveNextTask,
+  handleSelectRequirementCard,
+} from './actions/execution'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
   if (state.result !== null && action.type !== 'SETUP_GAME') {
@@ -36,6 +41,12 @@ export function applyAction(state: GameState, action: GameAction): GameState | R
       return handleExtraBilling(state, action)
     case 'DECLARE_READY':
       return handleDeclareReady(state, action)
+    case 'DECLARE_TASK_ORDER':
+      return handleDeclareTaskOrder(state, action)
+    case 'RESOLVE_NEXT_TASK':
+      return handleResolveNextTask(state)
+    case 'SELECT_REQUIREMENT_CARD':
+      return handleSelectRequirementCard(state, action)
     default:
       return violation('INVALID_STEP', `このアクションはまだ実装されていません: ${action.type}`)
   }

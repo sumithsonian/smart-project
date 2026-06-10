@@ -15,6 +15,7 @@ import {
   maybeStartLimitEvent,
   updatePlayer,
 } from '../helpers'
+import { maybeFinishExecution } from './execution'
 
 /** フェーズ開始時の行動トークン補充(RULES.md §2-1。疲労Lv2は -1、限界イベントのペナルティも適用) */
 function replenishTokens(state: GameState): GameState {
@@ -111,5 +112,8 @@ export function handleResolveEvent(state: GameState): GameState | RuleViolation 
   }
 
   // 疲労 Lv3 到達者がいれば次の限界イベントを開始する
-  return maybeStartLimitEvent(next)
+  next = maybeStartLimitEvent(next)
+  if (next.result !== null) return next
+  // 実行ステップ中なら、解決待ちがなくなった時点でフェーズ終了処理へ進む
+  return maybeFinishExecution(next)
 }
