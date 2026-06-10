@@ -36,6 +36,8 @@ export interface GameConfig {
   tasksPerPhase: number
   /** 学習タイル枚数(2〜3) */
   learningTiles: number
+  /** スキルレベル上限(RULES.md §5 暫定 Lv3) */
+  skillMax: number
   /** クライアント QCD 重みの適用方式 */
   qcdWeightMode: QcdWeightMode
   /** CS が 0 未満になった時点で即時敗北するか */
@@ -60,6 +62,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   extraBillingCsCost: 1,
   tasksPerPhase: 5,
   learningTiles: 2,
+  skillMax: 3,
   qcdWeightMode: 'multiply',
   csInstantLose: true,
   carryOverTokens: true,

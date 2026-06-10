@@ -8,6 +8,13 @@ import type { RuleViolation } from './types/violation'
 import { violation } from './types/violation'
 import { handleSetupGame } from './actions/setup'
 import { handleResolveEvent } from './actions/events'
+import {
+  handleDeclareReady,
+  handleExtraBilling,
+  handlePlaceToken,
+  handleRest,
+  handleRetrieveToken,
+} from './actions/planning'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
   if (state.result !== null && action.type !== 'SETUP_GAME') {
@@ -19,6 +26,16 @@ export function applyAction(state: GameState, action: GameAction): GameState | R
       return handleSetupGame(state, action)
     case 'RESOLVE_EVENT':
       return handleResolveEvent(state)
+    case 'PLACE_TOKEN':
+      return handlePlaceToken(state, action)
+    case 'RETRIEVE_TOKEN':
+      return handleRetrieveToken(state, action)
+    case 'REST':
+      return handleRest(state, action)
+    case 'EXTRA_BILLING':
+      return handleExtraBilling(state, action)
+    case 'DECLARE_READY':
+      return handleDeclareReady(state, action)
     default:
       return violation('INVALID_STEP', `このアクションはまだ実装されていません: ${action.type}`)
   }
