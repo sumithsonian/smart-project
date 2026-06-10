@@ -19,6 +19,9 @@ const lastViolation = ref<RuleViolation | null>(null)
 /** UI 上で選択中のタスク(配置・回収の対象) */
 const selectedTaskId = ref<string | null>(null)
 
+/** プレイヤーカラー(個人ボード・トークンチップで共通使用) */
+export const PLAYER_COLORS = ['#2563eb', '#16a34a', '#ea580c', '#9333ea', '#0891b2']
+
 export function useGame() {
   function dispatch(action: GameAction): boolean {
     const next = applyAction(state.value, action)
@@ -72,6 +75,11 @@ export function useGame() {
   function roleName(role: string) {
     return content.value.roles.find((r) => r.role === role)?.name ?? role
   }
+  /** プレイヤーIDから表示カラーを引く */
+  function playerColor(playerId: string): string {
+    const index = state.value.players.findIndex((p) => p.id === playerId)
+    return PLAYER_COLORS[index >= 0 ? index % PLAYER_COLORS.length : 0]!
+  }
 
   return {
     actions,
@@ -90,5 +98,6 @@ export function useGame() {
     requirementCard,
     personalGoal,
     roleName,
+    playerColor,
   }
 }

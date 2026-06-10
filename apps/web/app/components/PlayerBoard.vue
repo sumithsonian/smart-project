@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import type { PlayerState, SkillKind } from '@smart-project/engine'
 
 const props = defineProps<{ player: PlayerState }>()
-const { state, dispatch, selectedTaskId, personalGoal, roleName } = useGame()
+const { state, dispatch, selectedTaskId, personalGoal, roleName, playerColor } = useGame()
 
 const learningSkill = ref<SkillKind>('direction')
 const skillLabels: Record<SkillKind, string> = {
@@ -44,8 +44,13 @@ function learn() {
 </script>
 
 <template>
-  <div class="player-board" :class="{ ready: isReady }">
+  <div
+    class="player-board"
+    :class="{ ready: isReady }"
+    :style="{ borderTop: `3px solid ${playerColor(player.id)}` }"
+  >
     <div class="player-head">
+      <span class="player-dot" :style="{ background: playerColor(player.id) }" />
       <strong>{{ player.name }}</strong>
       <span class="badge">{{ roleName(player.role) }}</span>
       <span v-if="player.role === 'pm'" class="badge pm">PM</span>
