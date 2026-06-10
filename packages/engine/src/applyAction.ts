@@ -20,6 +20,7 @@ import {
   handleResolveNextTask,
   handleSelectRequirementCard,
 } from './actions/execution'
+import { handleAdvancePhase } from './actions/phaseEnd'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
   if (state.result !== null && action.type !== 'SETUP_GAME') {
@@ -47,7 +48,12 @@ export function applyAction(state: GameState, action: GameAction): GameState | R
       return handleResolveNextTask(state)
     case 'SELECT_REQUIREMENT_CARD':
       return handleSelectRequirementCard(state, action)
-    default:
-      return violation('INVALID_STEP', `このアクションはまだ実装されていません: ${action.type}`)
+    case 'ADVANCE_PHASE':
+      return handleAdvancePhase(state)
+    default: {
+      // 網羅性チェック:GameAction に新しい型を足したらここでコンパイルエラーになる
+      const exhaustive: never = action
+      return violation('INVALID_STEP', `未知のアクションです: ${JSON.stringify(exhaustive)}`)
+    }
   }
 }
