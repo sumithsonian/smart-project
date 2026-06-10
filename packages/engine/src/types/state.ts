@@ -175,6 +175,12 @@ export interface GameState {
   pendingRequirementChoice: PendingRequirementChoice | null
   /** 解決待ちイベント */
   pendingEvent: PendingEvent | null
+  /**
+   * フェーズ開始イベントの解決後に行動トークンを補充するか。
+   * RULES.md §2-1 の順序(イベント解決 → トークン補充)を再現するためのフラグ。
+   * セットアップ時は §7 で配布済みのため false。
+   */
+  replenishAfterEvent: boolean
   /** 限界イベント処理待ちのプレイヤーID(疲労Lv3到達順) */
   pendingLimitPlayerIds: string[]
   /** 次タスクのコスト修正(特殊効果。マイナスで割引) */
