@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import type { GameState } from '../src/types'
-import { isRuleViolation } from '../src/types'
-import { applyAction } from '../src/applyAction'
 import { processPhaseEnd, evaluatePersonalGoal } from '../src/actions/phaseEnd'
 import { apply, newGame, withPlayer } from './util'
 

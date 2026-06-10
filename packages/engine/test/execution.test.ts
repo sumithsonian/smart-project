@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { GameAction, GameState } from '../src/types'
 import { isRuleViolation } from '../src/types'
 import { applyAction } from '../src/applyAction'
-import { apply, must, newGame, withPlayer } from './util'
+import { apply, newGame } from './util'
 
 /** 指定の配置を行い、全員 Ready で実行ステップに入った状態を作る */
 function toExecution(
