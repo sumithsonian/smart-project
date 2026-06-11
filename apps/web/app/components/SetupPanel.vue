@@ -35,6 +35,16 @@ const numberFields: Array<{ key: keyof GameConfig; label: string }> = [
   { key: 'skillMax', label: 'スキル上限' },
 ]
 
+const fireFields: Array<{ key: keyof GameConfig; label: string }> = [
+  { key: 'firePerPhase', label: '炎上カード/フェーズ' },
+  { key: 'fireOutbreakThreshold', label: '延焼閾値' },
+  { key: 'fireOutbreakCsPenalty', label: '延焼CSペナルティ' },
+  { key: 'extinguishCost', label: '消火コスト' },
+  { key: 'epidemicCount', label: '大炎上カード数' },
+  { key: 'milestoneCount', label: 'マイルストーン数' },
+  { key: 'personalGoalChoices', label: '個人目標の配布枚数' },
+]
+
 function start() {
   dispatch({
     type: 'SETUP_GAME',
@@ -104,6 +114,25 @@ function start() {
           </label>
           <label>トークン持ち越し
             <input v-model="config.carryOverTokens" type="checkbox" />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>v2.1 炎上 / EP / マイルストーン</legend>
+        <div class="config-grid">
+          <label>🔥 炎上システム
+            <input v-model="config.fireEnabled" type="checkbox" />
+          </label>
+          <label>🤝 EP
+            <input v-model="config.epEnabled" type="checkbox" />
+          </label>
+          <label>🏅 マイルストーン
+            <input v-model="config.milestonesEnabled" type="checkbox" />
+          </label>
+          <label v-for="f in fireFields" :key="f.key">
+            {{ f.label }}
+            <input v-model.number="(config[f.key] as number)" type="number" />
           </label>
         </div>
       </fieldset>

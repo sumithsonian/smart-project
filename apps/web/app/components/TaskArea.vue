@@ -59,6 +59,11 @@ const lanes = computed(() => {
     }))
 })
 
+/** 🔥込みの必要トークン数 */
+function requiredOf(t: TaskInstance): number {
+  return (tile(t.tileId)?.requiredTokens ?? 0) + t.fire
+}
+
 /** 解決を妨げている不足要件の一覧(プランニング時点のプレビュー) */
 function shortfalls(t: TaskInstance): string[] {
   const def = tile(t.tileId)
@@ -66,8 +71,10 @@ function shortfalls(t: TaskInstance): string[] {
   const result: string[] = []
 
   const sum = tokenSum(t)
-  if (sum < def.requiredTokens) {
-    result.push(`🪙 トークン不足(${sum}/${def.requiredTokens})`)
+  if (sum < requiredOf(t)) {
+    result.push(
+      `🪙 トークン不足(${sum}/${requiredOf(t)}${t.fire > 0 ? `、🔥で+${t.fire}` : ''})`,
+    )
   }
   for (const dep of def.dependsOn) {
     const parent = state.value.taskArea.find((x) => x.tileId === dep)
@@ -150,15 +157,16 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
           </div>
 
           <div class="tile-cost-row">
-            <span class="pip-row" title="必要トークン">
+            <span class="pip-row" title="必要トークン(🔥で増加)">
               <span
-                v-for="i in tileDef(t)?.requiredTokens ?? 0"
+                v-for="i in requiredOf(t)"
                 :key="i"
                 class="pip"
-                :class="{ filled: i <= tokenSum(t) }"
+                :class="{ filled: i <= tokenSum(t), burning: i > (tileDef(t)?.requiredTokens ?? 0) }"
               />
             </span>
-            <span class="muted">{{ tokenSum(t) }}/{{ tileDef(t)?.requiredTokens }}</span>
+            <span class="muted">{{ tokenSum(t) }}/{{ requiredOf(t) }}</span>
+            <span v-if="t.fire > 0" class="fire-badge">🔥×{{ t.fire }}</span>
           </div>
 
           <div class="tile-meta">

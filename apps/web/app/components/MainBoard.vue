@@ -14,6 +14,7 @@ const sheet = computed(() =>
 const stepLabel = computed(() => {
   const labels: Record<string, string> = {
     setup: 'セットアップ',
+    goal_selection: '個人目標の選択',
     planning: 'プランニング(同時配置)',
     execution: '実行',
     phase_end: 'フェーズ終了',
@@ -23,6 +24,13 @@ const stepLabel = computed(() => {
 })
 const lv1Count = computed(() => state.value.deliverables.filter((d) => d.level === 1).length)
 const lv2Count = computed(() => state.value.deliverables.filter((d) => d.level === 2).length)
+const milestoneCards = computed(() =>
+  state.value.milestones.map((m) => ({
+    ...m,
+    card: content.value.milestones.find((c) => c.id === m.cardId),
+    achiever: state.value.players.find((p) => p.id === m.achievedBy)?.name ?? null,
+  })),
+)
 const phaseRule = computed(() => sheet.value?.phaseRules[state.value.phase - 1])
 const phaseNames = ['企画・要件定義', '設計・デザイン', '開発', 'テスト']
 </script>
@@ -59,6 +67,19 @@ const phaseNames = ['企画・要件定義', '設計・デザイン', '開発', 
       <span v-if="project">📦 {{ project.name }}</span>
       <span v-if="phaseRule" class="muted">
         今フェーズ基準:品質 Lv2×{{ phaseRule.qualityThreshold }} / 納期 未解決≦{{ phaseRule.deadlineAllowance }}
+      </span>
+    </div>
+    <div v-if="milestoneCards.length" class="milestone-strip">
+      <span
+        v-for="m in milestoneCards"
+        :key="m.cardId"
+        class="milestone-chip"
+        :class="{ claimed: m.achievedBy }"
+        :title="m.card?.description"
+      >
+        🏅 {{ m.card?.name }}
+        <strong v-if="m.achiever">→ {{ m.achiever }}</strong>
+        <span v-else class="muted">未達成</span>
       </span>
     </div>
     <div v-if="state.lastPhaseSummary" class="phase-summary">

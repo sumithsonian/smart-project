@@ -17,6 +17,22 @@ const isReady = computed(() => state.value.readyPlayerIds.includes(props.player.
 const isPlanning = computed(() => state.value.step === 'planning')
 const goal = computed(() => personalGoal(props.player.personalGoalId))
 const fatigueFace = computed(() => ['😀', '🙂', '😩', '🥵'][props.player.fatigue] ?? '🥵')
+const selectedHasFire = computed(() => {
+  if (!selectedTaskId.value) return false
+  return (state.value.taskArea.find((t) => t.tileId === selectedTaskId.value)?.fire ?? 0) > 0
+})
+const myMilestones = computed(() =>
+  state.value.milestones.filter((m) => m.achievedBy === props.player.id),
+)
+
+function extinguish() {
+  if (!selectedTaskId.value) return
+  dispatch({
+    type: 'EXTINGUISH_FIRE',
+    playerId: props.player.id,
+    taskTileId: selectedTaskId.value,
+  })
+}
 
 function place() {
   if (!selectedTaskId.value) return
@@ -59,19 +75,34 @@ function learn() {
     <div class="player-stats">
       <span>🪙 {{ player.tokens }}</span>
       <span>{{ fatigueFace }} 疲労Lv{{ player.fatigue }}</span>
+      <span v-if="state.config.epEnabled" title="EP:自分の仕事が他人に使われた回数">🤝 EP {{ player.ep }}</span>
       <span v-if="player.nextPhaseTokenPenalty > 0" class="danger-text">次補充-{{ player.nextPhaseTokenPenalty }}</span>
+    </div>
+    <div v-if="myMilestones.length" class="player-milestones">
+      <span v-for="m in myMilestones" :key="m.cardId" class="badge milestone">
+        🏅 {{ state.content.milestones.find((c) => c.id === m.cardId)?.name }}
+      </span>
     </div>
     <div class="player-skills muted">
       <span v-for="(label, skill) in skillLabels" :key="skill">
         {{ label.slice(0, 2) }} Lv{{ player.skills[skill] }}<template v-if="player.learningProgress[skill] > 0">(+{{ player.learningProgress[skill] }}🪙)</template>
       </span>
     </div>
-    <div class="player-goal secret-bg">
-      🎯 {{ goal?.name }}<span class="muted">:{{ goal?.description }}</span>
+    <div v-if="goal" class="player-goal secret-bg">
+      🎯 {{ goal.name }}<span class="muted">:{{ goal.description }}</span>
     </div>
+    <div v-else class="player-goal secret-bg muted">🎯 個人目標を選択中…</div>
     <div v-if="isPlanning && !isReady" class="player-actions">
       <button :disabled="!selectedTaskId" @click="place">配置</button>
       <button :disabled="!selectedTaskId" @click="retrieve">回収</button>
+      <button
+        v-if="state.config.fireEnabled"
+        :disabled="!selectedHasFire"
+        title="選択中タスクの🔥を1個除去"
+        @click="extinguish"
+      >
+        🧯消火
+      </button>
       <button @click="dispatch({ type: 'REST', playerId: player.id })">休憩</button>
       <button @click="dispatch({ type: 'EXTRA_BILLING', playerId: player.id })">追加請求</button>
       <span class="learn-group">

@@ -31,6 +31,12 @@ function describe(action: GameAction): string {
       return 'イベント解決'
     case 'ADVANCE_PHASE':
       return 'フェーズ進行'
+    case 'SELECT_PERSONAL_GOAL':
+      return `${name(action.playerId)}: 個人目標を選択`
+    case 'EXTINGUISH_FIRE':
+      return `${name(action.playerId)}: 🧯消火 → ${action.taskTileId}`
+    case 'SELECT_EPIDEMIC_TARGET':
+      return `${name(action.playerId)}: 🌋大炎上ターゲット → ${action.taskTileId}`
   }
 }
 

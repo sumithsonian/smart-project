@@ -198,6 +198,16 @@ input[type='number'] { width: 70px; }
   background: #fff;
 }
 .pip.filled { background: #f59e0b; border-color: #d97706; }
+.pip.burning { border-color: #dc2626; border-style: dashed; }
+.pip.burning.filled { background: #dc2626; border-color: #b91c1c; }
+.fire-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.74rem;
+}
 
 .tile-meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; font-size: 0.74rem; }
 .badge {
@@ -255,8 +265,31 @@ input[type='number'] { width: 70px; }
 .player-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .learn-group { display: inline-flex; gap: 2px; }
 
+/* マイルストーン */
+.milestone-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.milestone-chip {
+  background: #fefce8;
+  border: 1px solid #fde047;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 0.8rem;
+  cursor: help;
+}
+.milestone-chip.claimed { background: #fef08a; border-color: #eab308; }
+.player-milestones { margin: 4px 0; }
+.badge.milestone { background: #fef08a; color: #713f12; }
+
 /* 進行 */
 .event-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px; }
+.fire-box { background: #fef2f2; border-color: #fca5a5; }
+.fire-log {
+  margin-top: 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.fire-log ul { margin: 4px 0; padding-left: 18px; font-size: 0.82rem; }
 .requirement-choices { display: flex; gap: 8px; }
 .requirement-card {
   flex: 1;

@@ -2,7 +2,21 @@
 /** 進行コントロール:イベント解決・要件カード選択・タスク処理順宣言・タスク解決・フェーズ進行 */
 import { computed, ref, watch } from 'vue'
 
-const { state, dispatch, tile, eventCard, limitEventCard, requirementCard, content } = useGame()
+const { state, dispatch, tile, eventCard, limitEventCard, requirementCard, content, personalGoal } =
+  useGame()
+
+// ── 個人目標の選択(v2.1)──
+const goalPendingPlayers = computed(() =>
+  state.value.step === 'goal_selection'
+    ? state.value.players.filter((p) => p.personalGoalId === '')
+    : [],
+)
+
+// ── 大炎上のターゲット選択(v2.1)──
+const epidemicPending = computed(() => state.value.pendingEpidemicCount > 0)
+const unresolvedForEpidemic = computed(() =>
+  state.value.taskArea.filter((t) => !t.resolved),
+)
 
 // ── イベント表示 ──
 const pendingCard = computed(() => {
@@ -76,6 +90,47 @@ const requirementOptions = computed(() => {
           {{ p.name }}:個人目標 {{ state.result.personalResults[p.id] ? '達成 🏆' : '未達成' }}
         </li>
       </ul>
+    </div>
+
+    <!-- 個人目標の選択(v2.1) -->
+    <div v-else-if="goalPendingPlayers.length > 0" class="event-box">
+      <h3>🎯 個人目標の選択({{ state.players.length - goalPendingPlayers.length }}/{{ state.players.length }})</h3>
+      <p class="muted">各自、配られた2枚から1枚を選んでください(本来は秘密。ホットシートでは全公開)。</p>
+      <div v-for="p in goalPendingPlayers.slice(0, 1)" :key="p.id">
+        <p><strong>{{ p.name }}</strong> の番:</p>
+        <div class="requirement-choices">
+          <button
+            v-for="(goalId, i) in p.goalOptionIds"
+            :key="goalId"
+            class="requirement-card"
+            @click="dispatch({ type: 'SELECT_PERSONAL_GOAL', playerId: p.id, choiceIndex: i })"
+          >
+            <strong>{{ personalGoal(goalId)?.name }}</strong>
+            <span class="muted">{{ personalGoal(goalId)?.description }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 大炎上のターゲット選択(v2.1) -->
+    <div v-else-if="epidemicPending" class="event-box fire-box">
+      <h3>🌋 大炎上!</h3>
+      <p class="muted">炎上捨て札が山に戻りました。PM はターゲットのタスクを選んでください(🔥2個)。</p>
+      <div class="order-builder">
+        <button
+          v-for="t in unresolvedForEpidemic"
+          :key="t.tileId"
+          @click="
+            dispatch({
+              type: 'SELECT_EPIDEMIC_TARGET',
+              playerId: state.players.find((p) => p.role === 'pm')!.id,
+              taskTileId: t.tileId,
+            })
+          "
+        >
+          {{ tile(t.tileId)?.name }}<template v-if="t.fire > 0"> 🔥×{{ t.fire }}</template>
+        </button>
+      </div>
     </div>
 
     <!-- イベント解決 -->
@@ -153,6 +208,14 @@ const requirementOptions = computed(() => {
       <button class="primary" @click="dispatch({ type: 'ADVANCE_PHASE' })">
         {{ state.phase >= state.config.phases ? '最終判定へ' : '次のフェーズへ' }}
       </button>
+    </div>
+
+    <!-- 炎上レポート -->
+    <div v-if="state.config.fireEnabled && state.fireLog.length" class="fire-log">
+      <h3>🔥 炎上レポート(フェーズ{{ state.phase }})</h3>
+      <ul>
+        <li v-for="(line, i) in state.fireLog" :key="i">{{ line }}</li>
+      </ul>
     </div>
 
     <!-- 解決ログ -->
