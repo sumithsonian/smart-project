@@ -7,8 +7,9 @@ import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import { DEFAULT_CONFIG } from '../types/config'
 import { DEFAULT_CONTENT } from '../content'
-import { buildDeck, drawCard } from '../deck'
+import { buildDeck } from '../deck'
 import { nextInt, shuffle } from '../rng'
+import { beginPhaseStart } from './fire'
 
 type SetupAction = Extract<GameAction, { type: 'SETUP_GAME' }>
 
@@ -23,6 +24,8 @@ export function publishPhaseTasks(state: GameState, phase: number): GameState {
     resolved: false,
     resolvedPhase: null,
     appliedRequirementId: null,
+    fire: 0,
+    extinguisherIds: [],
   }))
   return { ...state, taskArea: [...state.taskArea, ...instances] }
 }
@@ -51,8 +54,9 @@ export function handleSetupGame(
   if (action.players.filter((p) => p.role === 'pm').length !== 1) {
     return violation('INVALID_SETUP', 'PM ロールのプレイヤーがちょうど1人必要です。')
   }
-  if (action.players.length > content.personalGoals.length) {
-    return violation('INVALID_SETUP', '個人目標カードがプレイヤー数に足りません。')
+  const goalChoices = Math.max(1, config.personalGoalChoices)
+  if (action.players.length * goalChoices > content.personalGoals.length) {
+    return violation('INVALID_SETUP', '個人目標カードがプレイヤー数 × 配布枚数に足りません。')
   }
   for (const p of action.players) {
     if (!content.roles.some((r) => r.role === p.role)) {
@@ -108,10 +112,12 @@ export function handleSetupGame(
   rng = rng4
 
   // ── 5〜7. ロール・個人目標(非公開)・初期スキル・行動トークンを配布 ──
+  // v2.1:goalChoices 枚配って1枚選ぶ(1枚配布なら従来どおり自動割当)
   const [shuffledGoals, rng5] = shuffle(rng, content.personalGoals)
   rng = rng5
   const players = action.players.map((p, i) => {
     const roleDef = content.roles.find((r) => r.role === p.role)!
+    const dealt = shuffledGoals.slice(i * goalChoices, (i + 1) * goalChoices)
     return {
       id: p.id,
       name: p.name,
@@ -124,15 +130,38 @@ export function handleSetupGame(
         roleDef.initialSkills.engineering,
       tokens: config.tokensPerPhase,
       nextPhaseTokenPenalty: 0,
-      personalGoalId: shuffledGoals[i]!.id,
+      personalGoalId: goalChoices === 1 ? dealt[0]!.id : '',
+      goalOptionIds: goalChoices === 1 ? [] : dealt.map((g) => g.id),
       learningProgress: { direction: 0, design: 0, engineering: 0 },
+      ep: 0,
+      extinguishCount: 0,
+      skillUpCount: 0,
+      tokensPlacedThisPhase: 0,
     }
   })
+
+  // ── マイルストーンを公開(v2.1)──
+  let milestones: GameState['milestones'] = []
+  if (config.milestonesEnabled) {
+    const [shuffledMilestones, rng6] = shuffle(rng, content.milestones)
+    rng = rng6
+    milestones = shuffledMilestones
+      .slice(0, config.milestoneCount)
+      .map((m) => ({ cardId: m.id, achievedBy: null }))
+  }
+
+  // ── 炎上デッキの初期構成(大炎上カードのみ。各フェーズ開始時にタスクカードが混ざる)──
+  const fireDeck = {
+    drawPile: Array.from({ length: config.epidemicCount }, (_, i) => `epidemic-${i + 1}`),
+    discardPile: [],
+  }
+
+  const needsGoalSelection = goalChoices > 1
 
   let next: GameState = {
     config,
     content,
-    step: 'planning',
+    step: needsGoalSelection ? 'goal_selection' : 'planning',
     phase: 1,
     cs: sheet.initialCs,
     budget: sheet.initialBudget,
@@ -143,7 +172,12 @@ export function handleSetupGame(
     players,
     taskArea: [],
     deliverables: [],
-    decks: { events: eventDeck, requirements: requirementDeck, limitEvents: limitEventDeck },
+    decks: {
+      events: eventDeck,
+      requirements: requirementDeck,
+      limitEvents: limitEventDeck,
+      fires: fireDeck,
+    },
     rng,
     readyPlayerIds: [],
     resolutionQueue: null,
@@ -152,6 +186,12 @@ export function handleSetupGame(
     replenishAfterEvent: false,
     pendingLimitPlayerIds: [],
     nextTaskCostModifier: 0,
+    remainingFireDraws: 0,
+    pendingEpidemicCount: 0,
+    phaseStartReplenish: null,
+    fireLog: [],
+    taskParticipants: {},
+    milestones,
     resolutionLog: [],
     lastPhaseSummary: null,
     result: null,
@@ -160,17 +200,43 @@ export function handleSetupGame(
   // ── 4. 第1フェーズのタスクタイルを公開 ──
   next = publishPhaseTasks(next, 1)
 
-  // ── フェーズ開始イベントを1枚引く(RULES.md §2-1。トークンは配布済みのため補充なし) ──
-  const { cardId, deck, rng: rng6 } = drawCard(next.decks.events, next.rng)
-  if (cardId !== null) {
-    next = {
-      ...next,
-      decks: { ...next.decks, events: deck },
-      rng: rng6,
-      pendingEvent: { kind: 'phase_start', cardId, targetPlayerId: null },
-      replenishAfterEvent: false,
-    }
+  // ── フェーズ開始フロー(炎上 → イベント)。目標選択がある場合は全員の選択後に行う ──
+  if (!needsGoalSelection) {
+    next = beginPhaseStart(next, false)
   }
 
+  return next
+}
+
+/** SELECT_PERSONAL_GOAL — 配られた個人目標カードから1枚選ぶ(v2.1) */
+export function handleSelectPersonalGoal(
+  state: GameState,
+  action: Extract<GameAction, { type: 'SELECT_PERSONAL_GOAL' }>,
+): GameState | RuleViolation {
+  if (state.step !== 'goal_selection') {
+    return violation('INVALID_STEP', '個人目標の選択ステップではありません。')
+  }
+  const player = state.players.find((p) => p.id === action.playerId)
+  if (!player) {
+    return violation('PLAYER_NOT_FOUND', `プレイヤーが見つかりません: ${action.playerId}`)
+  }
+  if (player.personalGoalId !== '') {
+    return violation('GOAL_ALREADY_SELECTED', 'すでに個人目標を選択済みです。')
+  }
+  const chosen = player.goalOptionIds[action.choiceIndex]
+  if (chosen === undefined) {
+    return violation('INVALID_GOAL_CHOICE', '選択肢の範囲外です。')
+  }
+  let next: GameState = {
+    ...state,
+    players: state.players.map((p) =>
+      p.id === player.id ? { ...p, personalGoalId: chosen, goalOptionIds: [] } : p,
+    ),
+  }
+  // 全員選び終わったらプランニングへ(フェーズ開始フロー:炎上 → イベント)
+  if (next.players.every((p) => p.personalGoalId !== '')) {
+    next = { ...next, step: 'planning' }
+    next = beginPhaseStart(next, false)
+  }
   return next
 }

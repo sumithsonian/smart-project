@@ -12,11 +12,15 @@ import type { GameState, PlayerState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import { applyWeight, changeBudget, changeCs, getClient, getPlayer, updatePlayer } from '../helpers'
+import { firePhaseActive } from './fire'
 
 /** プランニング中の共通ガード */
 function guardPlanning(state: GameState, playerId: string): RuleViolation | PlayerState {
   if (state.step !== 'planning') {
     return violation('INVALID_STEP', 'プランニングステップ以外ではこの操作はできません。')
+  }
+  if (firePhaseActive(state)) {
+    return violation('FIRE_PHASE_ACTIVE', '炎上フェーズの処理が終わるまで待ってください。')
   }
   if (state.pendingEvent !== null) {
     return violation('PENDING_EVENT', '先にイベントを解決してください。')
@@ -56,7 +60,11 @@ export function handlePlaceToken(
     if (instance.resolved) {
       return violation('TASK_ALREADY_RESOLVED', 'このタスクはすでに解決済みです。')
     }
-    let next = updatePlayer(state, player.id, (p) => ({ ...p, tokens: p.tokens - 1 }))
+    let next = updatePlayer(state, player.id, (p) => ({
+      ...p,
+      tokens: p.tokens - 1,
+      tokensPlacedThisPhase: p.tokensPlacedThisPhase + 1,
+    }))
     next = {
       ...next,
       taskArea: next.taskArea.map((t) =>
@@ -83,6 +91,7 @@ export function handlePlaceToken(
         tokens: p.tokens - 1,
         skills: { ...p.skills, [skill]: p.skills[skill] + 1 },
         learningProgress: { ...p.learningProgress, [skill]: 0 },
+        skillUpCount: p.skillUpCount + 1,
       }
     }
     return {
@@ -125,7 +134,11 @@ export function handleRetrieveToken(
   if ((instance.tokens[player.id] ?? 0) < 1) {
     return violation('NO_TOKEN_TO_RETRIEVE', 'このタスクに自分のトークンがありません。')
   }
-  let next = updatePlayer(state, player.id, (p) => ({ ...p, tokens: p.tokens + 1 }))
+  let next = updatePlayer(state, player.id, (p) => ({
+    ...p,
+    tokens: p.tokens + 1,
+    tokensPlacedThisPhase: Math.max(0, p.tokensPlacedThisPhase - 1),
+  }))
   next = {
     ...next,
     taskArea: next.taskArea.map((t) =>
@@ -185,6 +198,9 @@ export function handleDeclareReady(
 ): GameState | RuleViolation {
   if (state.step !== 'planning') {
     return violation('INVALID_STEP', 'プランニングステップ以外では Ready 宣言できません。')
+  }
+  if (firePhaseActive(state)) {
+    return violation('FIRE_PHASE_ACTIVE', '炎上フェーズの処理が終わるまで待ってください。')
   }
   if (state.pendingEvent !== null) {
     return violation('PENDING_EVENT', '先にイベントを解決してください。')

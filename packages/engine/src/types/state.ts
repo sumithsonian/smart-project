@@ -5,8 +5,14 @@
 import type { GameConfig } from './config'
 import type { DeliverableLevel, GameContent, Role, SkillKind } from './content'
 
-/** 現在のステップ */
-export type GameStep = 'setup' | 'planning' | 'execution' | 'phase_end' | 'finished'
+/** 現在のステップ(goal_selection は v2.1 の個人目標選択) */
+export type GameStep =
+  | 'setup'
+  | 'goal_selection'
+  | 'planning'
+  | 'execution'
+  | 'phase_end'
+  | 'finished'
 
 /** シード付き乱数の状態(mulberry32。Math.random は使わない) */
 export interface RngState {
@@ -34,6 +40,10 @@ export interface TaskInstance {
   resolvedPhase: number | null
   /** 適用された要件カードID(秘匿要件なし/未解決なら null) */
   appliedRequirementId: string | null
+  /** 🔥トークン数(v2.1 炎上システム。必要トークン数に加算される) */
+  fire: number
+  /** 今フェーズにこのタスクを消火したプレイヤーID(EP 判定用。フェーズ開始時にクリア) */
+  extinguisherIds: string[]
 }
 
 /** 成果物トークン(チームで共有。参加者を記録し個人目標判定に使う) */
@@ -66,10 +76,20 @@ export interface PlayerState {
   tokens: number
   /** 限界イベント由来の次フェーズ補充ペナルティ */
   nextPhaseTokenPenalty: number
-  /** 個人目標カードID(非公開) */
+  /** 個人目標カードID(非公開。v2.1 では選択完了まで空文字) */
   personalGoalId: string
+  /** 個人目標の選択肢(v2.1。選択後は空配列。非公開) */
+  goalOptionIds: string[]
   /** 学習タイル上の自分のトークン(系統ごとの累積。充足で消費) */
   learningProgress: Record<SkillKind, number>
+  /** EP(自分の仕事が他人に使われた回数。v2.1。公開) */
+  ep: number
+  /** 累計消火回数(v2.1) */
+  extinguishCount: number
+  /** 累計スキルアップ回数(v2.1) */
+  skillUpCount: number
+  /** 今フェーズにタスクへ配置したトークン数(v2.1 マイルストーン用) */
+  tokensPlacedThisPhase: number
 }
 
 /** 解決待ちイベント */
@@ -164,6 +184,8 @@ export interface GameState {
     requirements: DeckState
     /** 限界イベントデッキ */
     limitEvents: DeckState
+    /** 炎上デッキ(v2.1。カードID = タスクタイルID または epidemic-*) */
+    fires: DeckState
   }
   /** シード付き乱数の状態 */
   rng: RngState
@@ -185,6 +207,23 @@ export interface GameState {
   pendingLimitPlayerIds: string[]
   /** 次タスクのコスト修正(特殊効果。マイナスで割引) */
   nextTaskCostModifier: number
+  /** フェーズ開始の炎上ドローの残り枚数(v2.1。0 になるまで他の操作はできない) */
+  remainingFireDraws: number
+  /** 大炎上のターゲット選択待ち数(v2.1。PM の SELECT_EPIDEMIC_TARGET 待ち) */
+  pendingEpidemicCount: number
+  /** 炎上フロー完了後にフェーズ開始イベントを引く際の補充フラグ(フロー外なら null) */
+  phaseStartReplenish: boolean | null
+  /** 今フェーズの炎上レポート(UI 表示用。フェーズ開始時にクリア) */
+  fireLog: string[]
+  /** 解決済みタスクの参加者の記録(EP 判定用。タイルID → プレイヤーID) */
+  taskParticipants: Record<string, string[]>
+  /** 公開中のマイルストーンと達成者(v2.1) */
+  milestones: Array<{
+    /** マイルストーンカードID */
+    cardId: string
+    /** 達成者(未達成なら null) */
+    achievedBy: string | null
+  }>
   /** 今フェーズのタスク解決ログ */
   resolutionLog: TaskResolutionEntry[]
   /** 直近のフェーズ終了判定サマリ */

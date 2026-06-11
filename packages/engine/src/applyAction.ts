@@ -5,8 +5,8 @@
 import type { GameAction } from './types/actions'
 import type { GameState } from './types/state'
 import type { RuleViolation } from './types/violation'
-import { violation } from './types/violation'
-import { handleSetupGame } from './actions/setup'
+import { isRuleViolation, violation } from './types/violation'
+import { handleSetupGame, handleSelectPersonalGoal } from './actions/setup'
 import { handleResolveEvent } from './actions/events'
 import {
   handleDeclareReady,
@@ -21,15 +21,34 @@ import {
   handleSelectRequirementCard,
 } from './actions/execution'
 import { handleAdvancePhase } from './actions/phaseEnd'
+import { handleExtinguishFire, handleSelectEpidemicTarget } from './actions/fire'
+import { checkMilestones } from './actions/milestones'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
   if (state.result !== null && action.type !== 'SETUP_GAME') {
     return violation('GAME_FINISHED', 'ゲームはすでに終了しています。')
   }
+  // 個人目標の選択中は他のアクションを受け付けない(v2.1)
+  if (
+    state.step === 'goal_selection' &&
+    action.type !== 'SELECT_PERSONAL_GOAL' &&
+    action.type !== 'SETUP_GAME'
+  ) {
+    return violation('GOAL_SELECTION_PENDING', '全員の個人目標選択が終わるまで待ってください。')
+  }
 
+  const result = dispatch(state, action)
+  if (isRuleViolation(result)) return result
+  // マイルストーンの達成チェック(早取り。状態が変わるたびに判定)
+  return checkMilestones(result)
+}
+
+function dispatch(state: GameState, action: GameAction): GameState | RuleViolation {
   switch (action.type) {
     case 'SETUP_GAME':
       return handleSetupGame(state, action)
+    case 'SELECT_PERSONAL_GOAL':
+      return handleSelectPersonalGoal(state, action)
     case 'RESOLVE_EVENT':
       return handleResolveEvent(state)
     case 'PLACE_TOKEN':
@@ -50,6 +69,10 @@ export function applyAction(state: GameState, action: GameAction): GameState | R
       return handleSelectRequirementCard(state, action)
     case 'ADVANCE_PHASE':
       return handleAdvancePhase(state)
+    case 'EXTINGUISH_FIRE':
+      return handleExtinguishFire(state, action)
+    case 'SELECT_EPIDEMIC_TARGET':
+      return handleSelectEpidemicTarget(state, action)
     default: {
       // 網羅性チェック:GameAction に新しい型を足したらここでコンパイルエラーになる
       const exhaustive: never = action

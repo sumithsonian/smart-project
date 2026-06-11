@@ -13,10 +13,12 @@ export interface DeckView {
   discardPile: string[]
 }
 
-/** 他プレイヤーの個人ボードビュー(個人目標は自分のぶんしか見えない) */
-export interface PlayerBoardView extends Omit<PlayerState, 'personalGoalId'> {
+/** 他プレイヤーの個人ボードビュー(個人目標・選択肢は自分のぶんしか見えない) */
+export interface PlayerBoardView extends Omit<PlayerState, 'personalGoalId' | 'goalOptionIds'> {
   /** 個人目標カードID(自分以外は null) */
   personalGoalId: string | null
+  /** 個人目標の選択肢(自分以外は空配列) */
+  goalOptionIds: string[]
 }
 
 /** プレイヤー1人から見えるゲーム状態 */
@@ -34,6 +36,8 @@ export interface PlayerView
     requirements: DeckView
     /** 限界イベントデッキ */
     limitEvents: DeckView
+    /** 炎上デッキ(v2.1) */
+    fires: DeckView
   }
 }
 
@@ -50,11 +54,13 @@ export function redactFor(state: GameState, playerId: string): PlayerView {
     players: players.map((p) => ({
       ...p,
       personalGoalId: p.id === playerId ? p.personalGoalId : null,
+      goalOptionIds: p.id === playerId ? p.goalOptionIds : [],
     })),
     decks: {
       events: redactDeck(decks.events),
       requirements: redactDeck(decks.requirements),
       limitEvents: redactDeck(decks.limitEvents),
+      fires: redactDeck(decks.fires),
     },
   }
 }

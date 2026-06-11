@@ -6,6 +6,7 @@ import type {
   ClientCard,
   EventCard,
   LimitEventCard,
+  MilestoneCard,
   PersonalGoalCard,
   ProjectCard,
   ProjectSheet,
@@ -212,6 +213,64 @@ export const PERSONAL_GOALS: PersonalGoalCard[] = [
     name: 'コスト番人',
     description: 'ゲーム終了時に予算を初期値の3割以上残す',
     condition: { type: 'BUDGET_RATIO_AT_LEAST', ratio: 0.3 },
+  },
+  {
+    id: 'pg-hub',
+    name: 'ハブ人材',
+    description: 'EP(自分の仕事が他人に使われた回数)を5以上にする',
+    condition: { type: 'EP_AT_LEAST', amount: 5 },
+  },
+  {
+    id: 'pg-firefighter',
+    name: '火消し屋',
+    description: '累計4回以上消火する',
+    condition: { type: 'EXTINGUISH_AT_LEAST', count: 4 },
+  },
+  {
+    id: 'pg-generalist',
+    name: '何でも屋',
+    description: '3系統すべてのスキルを Lv1 以上にする',
+    condition: { type: 'ALL_SKILLS_AT_LEAST', level: 1 },
+  },
+  {
+    id: 'pg-steady',
+    name: '安定稼働',
+    description: 'ゲーム終了時に疲労 Lv1 以下でいる',
+    condition: { type: 'FATIGUE_AT_MOST', level: 1 },
+  },
+]
+
+/** マイルストーンカード(v2.1。公開・早取り) */
+export const MILESTONES: MilestoneCard[] = [
+  {
+    id: 'ms-firefighter',
+    name: '火消し番長',
+    description: '最初に累計5回消火する',
+    condition: { type: 'EXTINGUISH_AT_LEAST', count: 5 },
+  },
+  {
+    id: 'ms-quality',
+    name: '品質職人',
+    description: '最初に Lv2 成果物2個に参加する',
+    condition: { type: 'LV2_PARTICIPATED_AT_LEAST', count: 2 },
+  },
+  {
+    id: 'ms-learner',
+    name: '学習の鬼',
+    description: '最初にスキルアップを2回行う',
+    condition: { type: 'SKILL_UP_AT_LEAST', count: 2 },
+  },
+  {
+    id: 'ms-unsung',
+    name: '縁の下',
+    description: '最初に EP 4 に到達する',
+    condition: { type: 'EP_AT_LEAST', amount: 4 },
+  },
+  {
+    id: 'ms-workhorse',
+    name: '鬼の工数',
+    description: '最初に1フェーズ中にトークン5個以上をタスクへ配置する',
+    condition: { type: 'PHASE_PLACEMENTS_AT_LEAST', count: 5 },
   },
 ]
 

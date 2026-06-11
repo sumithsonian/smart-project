@@ -120,14 +120,15 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
 
   const ids = participantIds(instance)
 
-  // ── 1. 必要トークン数の確認(不足ならこのフェーズは未解決のまま) ──
+  // ── 1. 必要トークン数の確認(🔥1個につき +1。不足ならこのフェーズは未解決のまま) ──
+  const requiredTokens = tile.requiredTokens + instance.fire
   const totalTokens = Object.values(instance.tokens).reduce((a, b) => a + b, 0)
-  if (totalTokens < tile.requiredTokens) {
+  if (totalTokens < requiredTokens) {
     return failTask(
       state,
       tile,
       'NOT_ENOUGH_TOKENS',
-      `「${tile.name}」はトークン不足(${totalTokens}/${tile.requiredTokens})のため未解決のまま残りました。`,
+      `「${tile.name}」はトークン不足(${totalTokens}/${requiredTokens}${instance.fire > 0 ? `、🔥+${instance.fire}` : ''})のため未解決のまま残りました。`,
     )
   }
 
@@ -243,6 +244,7 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
     taskArea: next.taskArea.map((t) =>
       t.tileId === tileId ? { ...t, resolved: true, resolvedPhase: next.phase } : t,
     ),
+    taskParticipants: { ...next.taskParticipants, [tileId]: ids },
     resolutionLog: [
       ...next.resolutionLog,
       {
@@ -252,6 +254,33 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
         message: `「${tile.name}」を解決しました。`,
       },
     ],
+  }
+
+  // ── EP 付与(RULES.md §11):自分の仕事が他人に使われた ──
+  if (next.config.epEnabled) {
+    const epGains = new Map<string, number>()
+    // 1. 親タスクの参加者(このタスクに不参加)に +1
+    for (const dep of tile.dependsOn) {
+      for (const parentParticipant of next.taskParticipants[dep] ?? []) {
+        if (!ids.includes(parentParticipant)) {
+          epGains.set(parentParticipant, (epGains.get(parentParticipant) ?? 0) + 1)
+        }
+      }
+    }
+    // 2. このタスクを今フェーズ消火した人(不参加)に +1
+    for (const extinguisher of instance.extinguisherIds) {
+      if (!ids.includes(extinguisher)) {
+        epGains.set(extinguisher, (epGains.get(extinguisher) ?? 0) + 1)
+      }
+    }
+    if (epGains.size > 0) {
+      next = {
+        ...next,
+        players: next.players.map((p) =>
+          epGains.has(p.id) ? { ...p, ep: p.ep + epGains.get(p.id)! } : p,
+        ),
+      }
+    }
   }
 
   // ── 8. 特殊効果(例:次タスクコスト減)。イベントより先に確定させる ──

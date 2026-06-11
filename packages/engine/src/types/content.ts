@@ -141,6 +141,12 @@ export type PersonalGoalCondition =
   | { type: 'FATIGUE_AT_MOST'; level: number }
   /** ゲーム終了時の予算が初期予算の N 割以上 */
   | { type: 'BUDGET_RATIO_AT_LEAST'; ratio: number }
+  /** EP が N 以上(v2.1) */
+  | { type: 'EP_AT_LEAST'; amount: number }
+  /** 累計消火回数が N 以上(v2.1) */
+  | { type: 'EXTINGUISH_AT_LEAST'; count: number }
+  /** 全スキル系統が Lv N 以上(v2.1) */
+  | { type: 'ALL_SKILLS_AT_LEAST'; level: number }
 
 /** 個人目標カード(各自1枚、非公開) */
 export interface PersonalGoalCard {
@@ -206,6 +212,31 @@ export interface ProjectSheet {
   specialRule: string | null
 }
 
+/** マイルストーンの達成条件(v2.1。公開・早取り) */
+export type MilestoneCondition =
+  /** 累計消火回数が N 以上 */
+  | { type: 'EXTINGUISH_AT_LEAST'; count: number }
+  /** 自分が参加した Lv2 成果物が N 個以上 */
+  | { type: 'LV2_PARTICIPATED_AT_LEAST'; count: number }
+  /** スキルアップ回数が N 以上 */
+  | { type: 'SKILL_UP_AT_LEAST'; count: number }
+  /** EP が N 以上 */
+  | { type: 'EP_AT_LEAST'; amount: number }
+  /** 1フェーズ内にタスクへ配置したトークンが N 個以上 */
+  | { type: 'PHASE_PLACEMENTS_AT_LEAST'; count: number }
+
+/** マイルストーンカード(v2.1。最初に達成した1人だけが獲得) */
+export interface MilestoneCard {
+  /** カードID */
+  id: string
+  /** カード名 */
+  name: string
+  /** 条件の説明文 */
+  description: string
+  /** 達成条件 */
+  condition: MilestoneCondition
+}
+
 /** ロール定義(初期スキル値。RULES.md §9-6 暫定) */
 export interface RoleDef {
   /** ロール */
@@ -228,6 +259,8 @@ export interface GameContent {
   limitEvents: LimitEventCard[]
   /** 個人目標カード */
   personalGoals: PersonalGoalCard[]
+  /** マイルストーンカード(v2.1) */
+  milestones: MilestoneCard[]
   /** クライアントカード */
   clients: ClientCard[]
   /** プロジェクトカード */

@@ -13,6 +13,7 @@ export const PLAYERS: PlayerSetup[] = [
   { id: 'd', name: 'だいち', role: 'engineer' },
 ]
 
+/** v1 ルール相当(v2.1 の新システムはオフ)でのセットアップ */
 export const SETUP_ACTION: GameAction = {
   type: 'SETUP_GAME',
   seed: 42,
@@ -20,6 +21,12 @@ export const SETUP_ACTION: GameAction = {
   clientId: 'cl-komakai',
   projectCardId: 'pj-corporate',
   projectSheetId: 'ps-standard',
+  config: {
+    fireEnabled: false,
+    epEnabled: false,
+    milestonesEnabled: false,
+    personalGoalChoices: 1,
+  },
 }
 
 describe('SETUP_GAME(RULES.md §7)', () => {

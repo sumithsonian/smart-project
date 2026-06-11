@@ -48,7 +48,8 @@ describe('仮コンテンツの整合性', () => {
     expect(DEFAULT_CONTENT.events).toHaveLength(10)
     expect(DEFAULT_CONTENT.requirements).toHaveLength(8)
     expect(DEFAULT_CONTENT.limitEvents).toHaveLength(7) // 6枚 + 「何も起きない」1枚
-    expect(DEFAULT_CONTENT.personalGoals).toHaveLength(4)
+    expect(DEFAULT_CONTENT.personalGoals).toHaveLength(8) // v1 4枚 + v2.1 4枚(2枚配布×4人に対応)
+    expect(DEFAULT_CONTENT.milestones).toHaveLength(5) // v2.1
   })
 
   it('限界イベントに「何も起きない」が1枚だけ含まれる', () => {

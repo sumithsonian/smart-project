@@ -60,3 +60,9 @@ export type GameAction =
   | { type: 'RESOLVE_EVENT' }
   /** フェーズ終了処理のあと次フェーズへ進む(最終フェーズなら勝敗判定) */
   | { type: 'ADVANCE_PHASE' }
+  /** 配られた個人目標カードから1枚を選ぶ(v2.1。goal_selection ステップ) */
+  | { type: 'SELECT_PERSONAL_GOAL'; playerId: string; choiceIndex: number }
+  /** 消火:行動トークンを支払ってタスクの🔥を1個除去する(v2.1。プランニング中) */
+  | { type: 'EXTINGUISH_FIRE'; playerId: string; taskTileId: string }
+  /** 大炎上のターゲットを PM が選ぶ(v2.1。選択タスクに🔥2個) */
+  | { type: 'SELECT_EPIDEMIC_TARGET'; playerId: string; taskTileId: string }

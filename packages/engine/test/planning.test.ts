@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { applyAction } from '../src/applyAction'
 import { createInitialState } from '../src/initialState'
 import { isRuleViolation } from '../src/types'
-import { apply, must, newGame, withPlayer, PLAYERS } from './util'
+import { apply, must, newGame, withPlayer, PLAYERS, V1_CONFIG } from './util'
 
 describe('プランニング:トークン配置(RULES.md §2-2)', () => {
   it('タスクにトークンを配置すると、手持ちが減りタスクに積まれる', () => {
@@ -57,6 +57,7 @@ describe('プランニング:トークン配置(RULES.md §2-2)', () => {
         players: PLAYERS,
         clientId: 'cl-komakai',
         projectCardId: 'pj-corporate',
+        config: { ...V1_CONFIG },
       }),
     )
     const result = applyAction(state, {

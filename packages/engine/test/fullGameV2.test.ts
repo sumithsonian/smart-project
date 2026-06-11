@@ -7,11 +7,10 @@ import { replay } from '../src/replay'
 import { PLAYERS } from './util'
 
 /**
- * 通しプレイ検証:単純な方針の自動プレイヤーで
- * セットアップ → 4フェーズ → 勝敗判定まで到達できることを確認する。
- * シード固定なので、アクション列・最終状態とも決定的。
+ * v2.1 ルール(炎上 + EP + マイルストーン + 目標選択)での通しプレイ検証。
+ * 自動プレイヤーは消火もしながら、終局(勝敗判定 or 即時敗北)まで到達できること。
  */
-function playFullGame(seed: number): { state: GameState; actions: GameAction[] } {
+function playFullGameV2(seed: number): { state: GameState; actions: GameAction[] } {
   let state = createInitialState()
   const actions: GameAction[] = []
 
@@ -24,31 +23,32 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
     actions.push(action)
   }
 
-  /** 解決待ち(イベント・要件カード)をすべて処理する */
+  /** 解決待ち(大炎上 → イベント → 要件カード)をすべて処理する */
   const drain = (): void => {
     let guard = 0
-    while ((state.pendingEvent || state.pendingRequirementChoice) && guard++ < 50) {
-      if (state.pendingEvent) {
+    while (guard++ < 100) {
+      if (state.result !== null) return
+      if (state.pendingEpidemicCount > 0) {
+        const pm = state.players.find((p) => p.role === 'pm')!
+        // 🔥が一番多い未解決タスクに重ねる(延焼ドラマを起こしやすく)
+        const target = [...state.taskArea]
+          .filter((t) => !t.resolved)
+          .sort((a, b) => b.fire - a.fire)[0]!
+        act({ type: 'SELECT_EPIDEMIC_TARGET', playerId: pm.id, taskTileId: target.tileId })
+        continue
+      }
+      if (state.pendingEvent !== null) {
         act({ type: 'RESOLVE_EVENT' })
         continue
       }
-      const choice = state.pendingRequirementChoice!
-      const instance = state.taskArea.find((t) => t.tileId === choice.taskTileId)!
-      const participants = Object.entries(instance.tokens)
-        .filter(([, c]) => c > 0)
-        .map(([id]) => state.players.find((p) => p.id === id)!)
-      // 追加スキル条件を満たせないカードは避ける
-      const ok = (cardId: string): boolean => {
-        const card = state.content.requirements.find((c) => c.id === cardId)!
-        if (card.effect.type !== 'EXTRA_SKILL') return true
-        const req = card.effect.requirement
-        return participants.some((p) => p.skills[req.skill] >= req.level)
+      if (state.pendingRequirementChoice !== null) {
+        act({ type: 'SELECT_REQUIREMENT_CARD', choiceIndex: 0 })
+        continue
       }
-      act({ type: 'SELECT_REQUIREMENT_CARD', choiceIndex: ok(choice.optionIds[0]) ? 0 : 1 })
+      return
     }
   }
 
-  /** 依存順(コンテンツ定義順 × フェーズ昇順)のタスク並び */
   const topoOrder = (tasks: TaskInstance[]): string[] => {
     const indexOf = (id: string) => state.content.tasks.findIndex((t) => t.id === id)
     return tasks
@@ -61,7 +61,7 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
       })
   }
 
-  /** プランニング:休憩 → 追加請求 → スキル適合者を軸にトークン配置 */
+  /** プランニング:休憩 → 消火(🔥2個以上のタスク) → 配置 */
   const plan = (): void => {
     for (const p of state.players) {
       if (p.fatigue >= 2 && p.tokens > 0) act({ type: 'REST', playerId: p.id })
@@ -70,9 +70,18 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
       const payer = state.players.find((p) => p.tokens > 0)
       if (payer) act({ type: 'EXTRA_BILLING', playerId: payer.id })
     }
+    // 延焼間際(閾値-1)のタスクを優先消火
+    for (const t of state.taskArea.filter((x) => !x.resolved && x.fire >= 2)) {
+      const fighter = state.players.find((p) => p.tokens > 1)
+      if (!fighter) break
+      act({ type: 'EXTINGUISH_FIRE', playerId: fighter.id, taskTileId: t.tileId })
+    }
     for (const tileId of topoOrder(state.taskArea.filter((t) => !t.resolved))) {
       const tile = state.content.tasks.find((t) => t.id === tileId)!
-      const instance = state.taskArea.find((t) => t.tileId === tileId)!
+      const required = () => {
+        const cur = state.taskArea.find((t) => t.tileId === tileId)!
+        return tile.requiredTokens + cur.fire
+      }
       const placed = () => {
         const cur = state.taskArea.find((t) => t.tileId === tileId)!
         return Object.values(cur.tokens).reduce((a, b) => a + b, 0)
@@ -81,24 +90,24 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
         const cur = state.taskArea.find((t) => t.tileId === tileId)!
         return Object.entries(cur.tokens).filter(([, c]) => c > 0).length
       }
-      // スキル条件を満たすプレイヤーがいなければ配置しない
       const fitters = state.players.filter(
-        (p) => !tile.skillRequirement || p.skills[tile.skillRequirement.skill] >= tile.skillRequirement.level,
+        (p) =>
+          !tile.skillRequirement ||
+          p.skills[tile.skillRequirement.skill] >= tile.skillRequirement.level,
       )
       if (fitters.length === 0) continue
-      // 1個目はスキル適合者から
       const lead = fitters.find((p) => p.tokens > 0)
       if (!lead) continue
-      if (placed() < tile.requiredTokens && (instance.tokens[lead.id] ?? 0) === 0) {
+      const cur = state.taskArea.find((t) => t.tileId === tileId)!
+      if (placed() < required() && (cur.tokens[lead.id] ?? 0) === 0) {
         act({ type: 'PLACE_TOKEN', playerId: lead.id, target: { kind: 'task', taskTileId: tileId } })
       }
-      // 残りはトークンの多い人から(協業タスクは2人目を優先)
       let guard = 0
-      while (placed() < tile.requiredTokens && guard++ < 20) {
-        const cur = state.taskArea.find((t) => t.tileId === tileId)!
+      while (placed() < required() && guard++ < 25) {
+        const now = state.taskArea.find((t) => t.tileId === tileId)!
         const needSecond = tile.collaboration && placersOn() < 2
         const candidates = [...state.players]
-          .filter((p) => p.tokens > 0 && (!needSecond || (cur.tokens[p.id] ?? 0) === 0))
+          .filter((p) => p.tokens > 0 && (!needSecond || (now.tokens[p.id] ?? 0) === 0))
           .sort((a, b) => b.tokens - a.tokens)
         const giver = candidates[0]
         if (!giver) break
@@ -108,7 +117,7 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
     for (const p of state.players) act({ type: 'DECLARE_READY', playerId: p.id })
   }
 
-  // ── ゲーム開始(v1 ルール相当。v2.1 の通しプレイは fullGameV2.test.ts) ──
+  // ── ゲーム開始(v2.1 デフォルト設定)──
   act({
     type: 'SETUP_GAME',
     seed,
@@ -116,17 +125,16 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
     clientId: 'cl-komakai',
     projectCardId: 'pj-corporate',
     projectSheetId: 'ps-standard',
-    config: {
-      fireEnabled: false,
-      epEnabled: false,
-      milestonesEnabled: false,
-      personalGoalChoices: 1,
-    },
   })
+  // 個人目標の選択
+  while (state.step === 'goal_selection') {
+    const pending = state.players.find((p) => p.personalGoalId === '')!
+    act({ type: 'SELECT_PERSONAL_GOAL', playerId: pending.id, choiceIndex: 0 })
+  }
   drain()
 
   let guard = 0
-  while (state.result === null && guard++ < 1000) {
+  while (state.result === null && guard++ < 1500) {
     if (state.step === 'planning') {
       plan()
     } else if (state.step === 'execution' && state.resolutionQueue === null) {
@@ -149,32 +157,23 @@ function playFullGame(seed: number): { state: GameState; actions: GameAction[] }
   return { state, actions }
 }
 
-describe('通しプレイ(セットアップ → 4フェーズ → 勝敗判定)', () => {
-  it('1ゲームを最後までプレイでき、勝敗が判定される', () => {
-    const { state } = playFullGame(42)
+describe('v2.1 通しプレイ(炎上 + EP + マイルストーン)', () => {
+  it('終局(勝敗判定)まで到達できる', () => {
+    const { state } = playFullGameV2(42)
     expect(state.step).toBe('finished')
     expect(state.result).not.toBeNull()
-    expect(['win', 'lose']).toContain(state.result!.outcome)
     expect(Object.keys(state.result!.personalResults)).toHaveLength(4)
   })
 
-  it('アクションログのリプレイで同じ最終状態が再現できる(イベントソーシング)', () => {
-    const { state, actions } = playFullGame(42)
-    // JSON 経由(永続化想定)でもリプレイ可能
+  it('アクションログのリプレイで同じ最終状態が再現できる', () => {
+    const { state, actions } = playFullGameV2(42)
     const serialized = JSON.parse(JSON.stringify(actions)) as GameAction[]
     expect(replay(serialized)).toEqual(state)
   })
 
-  it('シードが同じなら全プレイが決定的', () => {
-    const a = playFullGame(123)
-    const b = playFullGame(123)
-    expect(a.actions).toEqual(b.actions)
-    expect(a.state).toEqual(b.state)
-  })
-
-  it('複数シードでクラッシュせず終局する', () => {
-    for (const seed of [1, 7, 99, 2026]) {
-      const { state } = playFullGame(seed)
+  it('複数シードでクラッシュせず終局する(炎上の乱数経路を含む)', () => {
+    for (const seed of [1, 7, 99, 555, 2026]) {
+      const { state } = playFullGameV2(seed)
       expect(state.step).toBe('finished')
     }
   })

@@ -11,8 +11,9 @@ import type { PersonalGoalCard } from '../types/content'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import { applyWeight, changeCs, getClient, getSheet } from '../helpers'
-import { drawCard } from '../deck'
 import { publishPhaseTasks } from './setup'
+import { beginPhaseStart } from './fire'
+import { hasMilestone } from './milestones'
 
 /**
  * フェーズ終了判定(実行ステップ完了時に自動で呼ばれる)
@@ -98,7 +99,23 @@ export function evaluatePersonalGoal(state: GameState, player: PlayerState): boo
       return player.fatigue <= condition.level
     case 'BUDGET_RATIO_AT_LEAST':
       return state.budget >= state.initialBudget * condition.ratio
+    case 'EP_AT_LEAST':
+      return player.ep >= condition.amount
+    case 'EXTINGUISH_AT_LEAST':
+      return player.extinguishCount >= condition.count
+    case 'ALL_SKILLS_AT_LEAST':
+      return (
+        player.skills.direction >= condition.level &&
+        player.skills.design >= condition.level &&
+        player.skills.engineering >= condition.level
+      )
   }
+}
+
+/** 個人勝利:個人目標達成 または マイルストーン獲得(RULES.md §1 / §11) */
+export function evaluatePersonalWin(state: GameState, player: PlayerState): boolean {
+  if (evaluatePersonalGoal(state, player)) return true
+  return state.config.milestonesEnabled && hasMilestone(state, player.id)
 }
 
 /** ADVANCE_PHASE — 次フェーズへ進む。最終フェーズなら勝敗判定(RULES.md §1) */
@@ -120,13 +137,13 @@ export function handleAdvancePhase(state: GameState): GameState | RuleViolation 
           : `最終フェーズ終了時に CS ${state.cs} < 0 のため、チームは敗北しました。`,
         // チーム敗北時は個人目標を評価しない(RULES.md §1)
         personalResults: Object.fromEntries(
-          state.players.map((p) => [p.id, won ? evaluatePersonalGoal(state, p) : false]),
+          state.players.map((p) => [p.id, won ? evaluatePersonalWin(state, p) : false]),
         ),
       },
     }
   }
 
-  // ── 次フェーズ開始(RULES.md §2-1):タスク公開 → イベント → トークン補充 ──
+  // ── 次フェーズ開始(RULES.md §2-1):タスク公開 → 炎上 → イベント → トークン補充 ──
   let next: GameState = {
     ...state,
     phase: state.phase + 1,
@@ -135,31 +152,10 @@ export function handleAdvancePhase(state: GameState): GameState | RuleViolation 
     resolutionQueue: null,
     resolutionLog: [],
     nextTaskCostModifier: 0,
+    // フェーズ単位のカウンタ・記録をリセット
+    players: state.players.map((p) => ({ ...p, tokensPlacedThisPhase: 0 })),
+    taskArea: state.taskArea.map((t) => ({ ...t, extinguisherIds: [] })),
   }
   next = publishPhaseTasks(next, next.phase)
-
-  const { cardId, deck, rng } = drawCard(next.decks.events, next.rng)
-  if (cardId !== null) {
-    next = {
-      ...next,
-      decks: { ...next.decks, events: deck },
-      rng,
-      pendingEvent: { kind: 'phase_start', cardId, targetPlayerId: null },
-      replenishAfterEvent: true,
-    }
-  } else {
-    // イベントデッキが完全に尽きている場合は補充のみ行う
-    next = {
-      ...next,
-      players: next.players.map((p) => {
-        const lv2Penalty = p.fatigue >= 2 ? next.config.fatigueLv2TokenPenalty : 0
-        const gained = Math.max(
-          0,
-          next.config.tokensPerPhase - lv2Penalty - p.nextPhaseTokenPenalty,
-        )
-        return { ...p, tokens: p.tokens + gained, nextPhaseTokenPenalty: 0 }
-      }),
-    }
-  }
-  return next
+  return beginPhaseStart(next, true)
 }

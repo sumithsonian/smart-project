@@ -44,6 +44,30 @@ export interface GameConfig {
   csInstantLose: boolean
   /** 未解決タスク上のトークンを次フェーズに持ち越すか */
   carryOverTokens: boolean
+
+  // ── v2.1: 炎上システム(RULES.md §10)──
+  /** 炎上システムを有効にするか(false で v1 ルール) */
+  fireEnabled: boolean
+  /** フェーズ開始時に引く炎上カード枚数 */
+  firePerPhase: number
+  /** この個数目の🔥で延焼(それ自体は置かれない) */
+  fireOutbreakThreshold: number
+  /** 延焼1回あたりの CS 減少 */
+  fireOutbreakCsPenalty: number
+  /** 消火1回に使う行動トークン数 */
+  extinguishCost: number
+  /** 大炎上(エピデミック)カードの枚数 */
+  epidemicCount: number
+
+  // ── v2.1: EP・マイルストーン(RULES.md §11)──
+  /** EP(自分の仕事が他人に使われた回数)を有効にするか */
+  epEnabled: boolean
+  /** マイルストーン(公開・早取り目標)を有効にするか */
+  milestonesEnabled: boolean
+  /** 公開するマイルストーン枚数 */
+  milestoneCount: number
+  /** 個人目標の配布枚数(1枚選ぶ。1なら従来どおり自動割当) */
+  personalGoalChoices: number
 }
 
 /** RULES.md §8 の初期値 */
@@ -66,4 +90,14 @@ export const DEFAULT_CONFIG: GameConfig = {
   qcdWeightMode: 'multiply',
   csInstantLose: true,
   carryOverTokens: true,
+  fireEnabled: true,
+  firePerPhase: 2,
+  fireOutbreakThreshold: 4,
+  fireOutbreakCsPenalty: 1,
+  extinguishCost: 1,
+  epidemicCount: 2,
+  epEnabled: true,
+  milestonesEnabled: true,
+  milestoneCount: 3,
+  personalGoalChoices: 2,
 }

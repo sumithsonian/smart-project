@@ -43,6 +43,18 @@ export type RuleViolationCode =
   | 'INVALID_SETUP'
   /** スキル上限のため学習できない */
   | 'SKILL_MAX'
+  /** 個人目標は選択済み */
+  | 'GOAL_ALREADY_SELECTED'
+  /** 個人目標の選択が不正(選択肢の範囲外など) */
+  | 'INVALID_GOAL_CHOICE'
+  /** 全員の個人目標選択が終わっていない */
+  | 'GOAL_SELECTION_PENDING'
+  /** 対象タスクに🔥がない */
+  | 'NO_FIRE'
+  /** 大炎上のターゲット選択待ちがない */
+  | 'NO_PENDING_EPIDEMIC'
+  /** 炎上フェーズの処理中(大炎上ターゲットの選択待ちなど) */
+  | 'FIRE_PHASE_ACTIVE'
 
 /** ルール違反(applyAction が GameState の代わりに返す) */
 export interface RuleViolation {
