@@ -37,6 +37,8 @@ function describe(action: GameAction): string {
       return `${name(action.playerId)}: 🧯消火 → ${action.taskTileId}`
     case 'SELECT_EPIDEMIC_TARGET':
       return `${name(action.playerId)}: 🌋大炎上ターゲット → ${action.taskTileId}`
+    case 'OUTSOURCE_TASK':
+      return `${name(action.playerId)}: 🏷️外注 → ${action.taskTileId}`
   }
 }
 

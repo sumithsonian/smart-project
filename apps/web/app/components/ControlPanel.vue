@@ -164,6 +164,12 @@ const requirementOptions = computed(() => {
         全員で相談しながらトークンを配置し、各自「準備完了」を押してください
         ({{ state.readyPlayerIds.length }}/{{ state.players.length }})。
       </p>
+      <p v-if="state.config.mismatchEnabled" class="muted hint">
+        🎓 スキル未達タスクは「やっつけ」で解決できます(成果物ダウン+疲労+CS債務)。適任を当てる／育てる／外注するの三択。
+      </p>
+      <p v-if="state.config.outsourceEnabled" class="muted hint">
+        🏷️ 外注:このフェーズ残り {{ Math.max(0, state.config.outsourcePerPhase - state.outsourceCountThisPhase) }} 回(タスクの「外注」ボタン)。
+      </p>
     </div>
 
     <!-- 実行:処理順宣言 -->

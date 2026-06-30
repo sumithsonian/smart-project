@@ -26,6 +26,7 @@ export function publishPhaseTasks(state: GameState, phase: number): GameState {
     appliedRequirementId: null,
     fire: 0,
     extinguisherIds: [],
+    outsourced: false,
   }))
   return { ...state, taskArea: [...state.taskArea, ...instances] }
 }
@@ -188,6 +189,7 @@ export function handleSetupGame(
     nextTaskCostModifier: 0,
     remainingFireDraws: 0,
     pendingEpidemicCount: 0,
+    outsourceCountThisPhase: 0,
     phaseStartReplenish: null,
     fireLog: [],
     taskParticipants: {},

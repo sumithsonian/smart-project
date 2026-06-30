@@ -11,7 +11,7 @@ import type { GameAction, TokenTarget } from '../types/actions'
 import type { GameState, PlayerState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
-import { applyWeight, changeBudget, changeCs, getClient, getPlayer, updatePlayer } from '../helpers'
+import { applyWeight, changeBudget, changeCs, getClient, getPlayer, getTile, updatePlayer } from '../helpers'
 import { firePhaseActive } from './fire'
 
 /** プランニング中の共通ガード */
@@ -189,6 +189,60 @@ export function handleExtraBilling(
   next = changeBudget(next, state.config.extraBillingBudget)
   next = changeCs(next, -csCost)
   return next
+}
+
+/**
+ * OUTSOURCE_TASK — 外注(v2.2 配属トリアージ)
+ * 予算 + CS(クライアントC重み)を払い、タスクの専門席を充足扱いにする。
+ * やっつけ(スキル未達の代償解決)を避ける「金で殴る」第3の選択肢。フェーズ回数制限あり。
+ */
+export function handleOutsourceTask(
+  state: GameState,
+  action: Extract<GameAction, { type: 'OUTSOURCE_TASK' }>,
+): GameState | RuleViolation {
+  const guard = guardPlanning(state, action.playerId)
+  if (isViolation(guard)) return guard
+  if (!state.config.outsourceEnabled) {
+    return violation('OUTSOURCE_DISABLED', '外注は無効です(outsourceEnabled が false)。')
+  }
+  const instance = state.taskArea.find((t) => t.tileId === action.taskTileId)
+  if (!instance) {
+    return violation('TASK_NOT_FOUND', `タスクがタスクエリアにありません: ${action.taskTileId}`)
+  }
+  if (instance.resolved) {
+    return violation('TASK_ALREADY_RESOLVED', 'このタスクはすでに解決済みです。')
+  }
+  if (instance.outsourced) {
+    return violation('ALREADY_OUTSOURCED', 'このタスクはすでに外注済みです。')
+  }
+  const tile = getTile(state.content, action.taskTileId)
+  if (!tile || (tile.skillRequirement === null && !tile.hiddenRequirement)) {
+    return violation('NO_SKILL_SEAT', 'このタスクには外注できる専門席がありません。')
+  }
+  if (state.outsourceCountThisPhase >= state.config.outsourcePerPhase) {
+    return violation(
+      'OUTSOURCE_LIMIT',
+      `このフェーズの外注上限(${state.config.outsourcePerPhase}回)に達しています。`,
+    )
+  }
+  if (state.budget < state.config.outsourceBudgetCost) {
+    return violation('BUDGET_SHORT', '外注に必要な予算が足りません。')
+  }
+  const csCost = applyWeight(
+    state.config.outsourceCsCost,
+    getClient(state).weights.c,
+    state.config.qcdWeightMode,
+  )
+  let next = changeBudget(state, -state.config.outsourceBudgetCost)
+  next = changeCs(next, -csCost)
+  if (next.result !== null) return next
+  return {
+    ...next,
+    outsourceCountThisPhase: next.outsourceCountThisPhase + 1,
+    taskArea: next.taskArea.map((t) =>
+      t.tileId === action.taskTileId ? { ...t, outsourced: true } : t,
+    ),
+  }
 }
 
 /** DECLARE_READY — 準備完了宣言。全員揃ったら実行ステップへ */

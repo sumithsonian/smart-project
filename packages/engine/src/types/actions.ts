@@ -66,3 +66,5 @@ export type GameAction =
   | { type: 'EXTINGUISH_FIRE'; playerId: string; taskTileId: string }
   /** 大炎上のターゲットを PM が選ぶ(v2.1。選択タスクに🔥2個) */
   | { type: 'SELECT_EPIDEMIC_TARGET'; playerId: string; taskTileId: string }
+  /** 外注:予算+CS を払ってタスクの専門席を充足する(v2.2。プランニング中) */
+  | { type: 'OUTSOURCE_TASK'; playerId: string; taskTileId: string }

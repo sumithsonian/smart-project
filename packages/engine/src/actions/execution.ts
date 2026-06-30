@@ -6,13 +6,16 @@
  */
 import type { GameAction } from '../types/actions'
 import type { GameState, TaskInstance, TaskResolutionEntry } from '../types/state'
-import type { RequirementCard, SkillRequirement, TaskTile } from '../types/content'
+import type { DeliverableLevel, RequirementCard, SkillRequirement, TaskTile } from '../types/content'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import { drawCard, discard } from '../deck'
 import {
   addFatigue,
+  applyWeight,
   changeBudget,
+  changeCs,
+  getClient,
   getPlayer,
   getRequirementCard,
   getTile,
@@ -156,13 +159,23 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
   }
 
   // ── 2. 実行条件チェック(必要スキル・レベル) ──
-  if (tile.skillRequirement && !meetsSkill(state, ids, tile.skillRequirement)) {
-    return failTask(
-      state,
-      tile,
-      'SKILL_NOT_MET',
-      `「${tile.name}」のスキル条件(${tile.skillRequirement.skill} Lv${tile.skillRequirement.level})を満たす参加者がいません。`,
-    )
+  // 配属トリアージ(v2.2):未達でも mismatchEnabled なら「やっつけ」で代償付き解決。
+  // 外注済み(instance.outsourced)は専門席が充足されたものとして扱う。
+  let understaffed = false
+  if (
+    tile.skillRequirement &&
+    !instance.outsourced &&
+    !meetsSkill(state, ids, tile.skillRequirement)
+  ) {
+    if (!state.config.mismatchEnabled) {
+      return failTask(
+        state,
+        tile,
+        'SKILL_NOT_MET',
+        `「${tile.name}」のスキル条件(${tile.skillRequirement.skill} Lv${tile.skillRequirement.level})を満たす参加者がいません。`,
+      )
+    }
+    understaffed = true
   }
 
   // ── 3. 秘匿要件:要件カードを2枚引き、1枚選んで適用 ──
@@ -189,20 +202,43 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
     requirement = getRequirementCard(state, instance.appliedRequirementId) ?? null
   }
 
-  // 要件カードの追加スキル条件
-  if (requirement?.effect.type === 'EXTRA_SKILL' && !meetsSkill(state, ids, requirement.effect.requirement)) {
-    return failTask(
-      state,
-      tile,
-      'SKILL_NOT_MET',
-      `要件カード「${requirement.name}」の追加スキル条件(${requirement.effect.requirement.skill} Lv${requirement.effect.requirement.level})を満たす参加者がいません。`,
-    )
+  // 要件カードの追加スキル条件(v2.2:未達でも mismatchEnabled なら やっつけ。外注済みは充足扱い)
+  if (
+    requirement?.effect.type === 'EXTRA_SKILL' &&
+    !instance.outsourced &&
+    !meetsSkill(state, ids, requirement.effect.requirement)
+  ) {
+    if (!state.config.mismatchEnabled) {
+      return failTask(
+        state,
+        tile,
+        'SKILL_NOT_MET',
+        `要件カード「${requirement.name}」の追加スキル条件(${requirement.effect.requirement.skill} Lv${requirement.effect.requirement.level})を満たす参加者がいません。`,
+      )
+    }
+    understaffed = true
   }
 
   // ── 4. 実行コスト(予算)を支払う ──
   const extraCost = requirement?.effect.type === 'EXTRA_COST' ? requirement.effect.amount : 0
   const discountByCard = requirement?.effect.type === 'COST_DISCOUNT' ? requirement.effect.amount : 0
-  const cost = Math.max(0, tile.cost + extraCost - discountByCard + state.nextTaskCostModifier)
+  // 過剰スペック割引(v2.2):必要Lvを超える参加者がいれば実行コスト減(やっつけ・外注時は対象外)
+  let overqualDiscount = 0
+  if (
+    !understaffed &&
+    !instance.outsourced &&
+    tile.skillRequirement &&
+    state.config.overqualifiedDiscount > 0 &&
+    ids.some(
+      (id) => (getPlayer(state, id)?.skills[tile.skillRequirement!.skill] ?? 0) > tile.skillRequirement!.level,
+    )
+  ) {
+    overqualDiscount = state.config.overqualifiedDiscount
+  }
+  const cost = Math.max(
+    0,
+    tile.cost + extraCost - discountByCard - overqualDiscount + state.nextTaskCostModifier,
+  )
   if (state.budget < cost) {
     return failTask(
       state,
@@ -215,9 +251,13 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
   next = { ...next, nextTaskCostModifier: 0 } // コスト修正は次に解決した1タスクで消費
 
   // ── 5. 成果物トークンを獲得 ──
-  const levels = [...tile.deliverables]
+  let levels: DeliverableLevel[] = [...tile.deliverables]
   if (requirement?.effect.type === 'BONUS_DELIVERABLE') {
     levels.push(requirement.effect.level)
+  }
+  // 配属トリアージ(v2.2):やっつけ解決は成果物を1段ダウン(Lv2→Lv1、Lv1→消失)
+  if (understaffed && state.config.understaffDowngrade) {
+    levels = levels.flatMap((lv) => (lv > 1 ? [(lv - 1) as DeliverableLevel] : []))
   }
   next = {
     ...next,
@@ -232,8 +272,10 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
     ],
   }
 
-  // ── 6. 参加プレイヤーに実行時疲労を加算 ──
-  const extraFatigue = requirement?.effect.type === 'EXTRA_FATIGUE' ? requirement.effect.amount : 0
+  // ── 6. 参加プレイヤーに実行時疲労を加算(やっつけは understaffFatigue を上乗せ) ──
+  const extraFatigue =
+    (requirement?.effect.type === 'EXTRA_FATIGUE' ? requirement.effect.amount : 0) +
+    (understaffed ? state.config.understaffFatigue : 0)
   for (const id of ids) {
     next = addFatigue(next, id, tile.fatigue + extraFatigue)
   }
@@ -251,9 +293,24 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
         tileId: tile.id,
         resolved: true,
         failReason: null,
-        message: `「${tile.name}」を解決しました。`,
+        message: understaffed
+          ? `「${tile.name}」を やっつけ で解決しました(スキル未達:成果物ダウン/疲労+/品質債務)。`
+          : instance.outsourced
+            ? `「${tile.name}」を外注で解決しました。`
+            : `「${tile.name}」を解決しました。`,
       },
     ],
+  }
+
+  // 配属トリアージ(v2.2):やっつけ解決の品質債務 CS ペナルティ(クライアントQ重み適用)
+  if (understaffed && state.config.understaffCsPenalty > 0) {
+    const penalty = applyWeight(
+      state.config.understaffCsPenalty,
+      getClient(next).weights.q,
+      next.config.qcdWeightMode,
+    )
+    next = changeCs(next, -penalty)
+    if (next.result !== null) return next
   }
 
   // ── EP 付与(RULES.md §11):自分の仕事が他人に使われた ──

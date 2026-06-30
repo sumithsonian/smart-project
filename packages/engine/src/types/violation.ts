@@ -55,6 +55,18 @@ export type RuleViolationCode =
   | 'NO_PENDING_EPIDEMIC'
   /** 炎上フェーズの処理中(大炎上ターゲットの選択待ちなど) */
   | 'FIRE_PHASE_ACTIVE'
+  /** スキル条件を満たす参加者がいない(v2.2:mismatchEnabled=false 時) */
+  | 'SKILL_NOT_MET'
+  /** 実行コストに対して予算が不足(v2.2 外注など) */
+  | 'BUDGET_SHORT'
+  /** 外注が無効(outsourceEnabled=false) */
+  | 'OUTSOURCE_DISABLED'
+  /** すでに外注済みのタスク */
+  | 'ALREADY_OUTSOURCED'
+  /** 外注できる専門席がない(スキル条件・秘匿要件なし) */
+  | 'NO_SKILL_SEAT'
+  /** フェーズの外注上限に達した */
+  | 'OUTSOURCE_LIMIT'
 
 /** ルール違反(applyAction が GameState の代わりに返す) */
 export interface RuleViolation {

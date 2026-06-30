@@ -152,6 +152,7 @@ export function handleAdvancePhase(state: GameState): GameState | RuleViolation 
     resolutionQueue: null,
     resolutionLog: [],
     nextTaskCostModifier: 0,
+    outsourceCountThisPhase: 0,
     // フェーズ単位のカウンタ・記録をリセット
     players: state.players.map((p) => ({ ...p, tokensPlacedThisPhase: 0 })),
     taskArea: state.taskArea.map((t) => ({ ...t, extinguisherIds: [] })),

@@ -6,7 +6,24 @@
 import { computed } from 'vue'
 import type { TaskInstance, TaskTile } from '@smart-project/engine'
 
-const { state, tile, selectedTaskId, requirementCard, playerColor } = useGame()
+const { state, dispatch, tile, selectedTaskId, requirementCard, playerColor } = useGame()
+
+/** 外注の実行(チームアクション。便宜上 PM を実行者にする) */
+function outsource(tileId: string) {
+  const pm = state.value.players.find((p) => p.role === 'pm')
+  if (!pm) return
+  dispatch({ type: 'OUTSOURCE_TASK', playerId: pm.id, taskTileId: tileId })
+}
+
+/** タスクに専門席(スキル条件 or 秘匿要件)があり、外注できるか */
+function canOutsource(t: TaskInstance): boolean {
+  const def = tile(t.tileId)
+  if (!def || t.resolved || t.outsourced) return false
+  if (!state.value.config.outsourceEnabled) return false
+  if (state.value.step !== 'planning') return false
+  if (state.value.outsourceCountThisPhase >= state.value.config.outsourcePerPhase) return false
+  return def.skillRequirement !== null || def.hiddenRequirement
+}
 
 const skillLabels: Record<string, string> = {
   direction: 'ディレクション',
@@ -91,17 +108,24 @@ function shortfalls(t: TaskInstance): string[] {
       const player = state.value.players.find((p) => p.id === id)
       return player !== undefined && player.skills[skill as keyof typeof player.skills] >= level
     })
-  if (def.skillRequirement) {
+  // 外注済みは専門席が充足扱い(スキル不足を表示しない)
+  const mismatch = state.value.config.mismatchEnabled
+  const yarra = '→ やっつけ可(成果物ダウン+疲労+CS債務)'
+  if (def.skillRequirement && !t.outsourced) {
     const req = def.skillRequirement
     if (!meets(req.skill, req.level)) {
-      result.push(`🎓 ${skillLabels[req.skill]} Lv${req.level} を満たす参加者がいない`)
+      result.push(
+        `🎓 ${skillLabels[req.skill]} Lv${req.level} 未達${mismatch ? ` ${yarra}` : 'を満たす参加者がいない'}`,
+      )
     }
   }
   const applied = t.appliedRequirementId ? requirementCard(t.appliedRequirementId) : null
-  if (applied?.effect.type === 'EXTRA_SKILL') {
+  if (applied?.effect.type === 'EXTRA_SKILL' && !t.outsourced) {
     const req = applied.effect.requirement
     if (!meets(req.skill, req.level)) {
-      result.push(`📋 要件「${applied.name}」:${skillLabels[req.skill]} Lv${req.level} が必要`)
+      result.push(
+        `📋 要件「${applied.name}」:${skillLabels[req.skill]} Lv${req.level} 未達${mismatch ? ` ${yarra}` : 'が必要'}`,
+      )
     }
   }
   const cost = Math.max(0, def.cost + state.value.nextTaskCostModifier)
@@ -180,6 +204,18 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
             <span v-if="tileDef(t)?.eventMark" class="badge event">⚡</span>
             <span v-if="tileDef(t)?.specialEffect" class="badge special">✨次-{{ tileDef(t)!.specialEffect!.amount }}</span>
             <span v-if="(tileDef(t)?.phase ?? 0) < state.phase" class="badge warn">持ち越し</span>
+            <span v-if="t.outsourced" class="badge outsourced">🏷️外注済</span>
+          </div>
+
+          <div v-if="canOutsource(t)" class="tile-outsource">
+            <button
+              class="outsource-btn"
+              :disabled="state.budget < state.config.outsourceBudgetCost"
+              :title="`予算-${state.config.outsourceBudgetCost} / CS-${state.config.outsourceCsCost}(C重み)で専門席を充足`"
+              @click.stop="outsource(t.tileId)"
+            >
+              🏷️ 外注(予算-{{ state.config.outsourceBudgetCost }}/CS-{{ state.config.outsourceCsCost }})
+            </button>
           </div>
 
           <div v-if="tileDef(t)?.deliverables.length" class="tile-deliverables">

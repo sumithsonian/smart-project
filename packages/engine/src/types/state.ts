@@ -44,6 +44,8 @@ export interface TaskInstance {
   fire: number
   /** 今フェーズにこのタスクを消火したプレイヤーID(EP 判定用。フェーズ開始時にクリア) */
   extinguisherIds: string[]
+  /** 外注済みか(v2.2 配属トリアージ。専門席を充足扱いにし、やっつけ代償なしで解決できる) */
+  outsourced: boolean
 }
 
 /** 成果物トークン(チームで共有。参加者を記録し個人目標判定に使う) */
@@ -211,6 +213,8 @@ export interface GameState {
   remainingFireDraws: number
   /** 大炎上のターゲット選択待ち数(v2.1。PM の SELECT_EPIDEMIC_TARGET 待ち) */
   pendingEpidemicCount: number
+  /** 今フェーズの外注実行回数(v2.2。outsourcePerPhase で上限。フェーズ開始時に0) */
+  outsourceCountThisPhase: number
   /** 炎上フロー完了後にフェーズ開始イベントを引く際の補充フラグ(フロー外なら null) */
   phaseStartReplenish: boolean | null
   /** 今フェーズの炎上レポート(UI 表示用。フェーズ開始時にクリア) */

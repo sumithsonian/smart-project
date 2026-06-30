@@ -68,6 +68,26 @@ export interface GameConfig {
   milestoneCount: number
   /** 個人目標の配布枚数(1枚選ぶ。1なら従来どおり自動割当) */
   personalGoalChoices: number
+
+  // ── v2.2: 配属トリアージ(rules-v2-proposal.md §2。すべて false 既定で v2.1 互換)──
+  /** スキル未達でも代償付きで解決する「やっつけ」を許可するか(false なら従来どおり解決失敗) */
+  mismatchEnabled: boolean
+  /** やっつけ解決時、参加者に加算する追加疲労 */
+  understaffFatigue: number
+  /** やっつけ解決時、成果物を1段ダウンさせるか(Lv2→Lv1、Lv1→消失) */
+  understaffDowngrade: boolean
+  /** やっつけ解決時の CS 減少(品質債務。クライアントQ重み適用) */
+  understaffCsPenalty: number
+  /** 必要Lvを超える参加者がいる場合の実行コスト割引(過剰スペック) */
+  overqualifiedDiscount: number
+  /** 外注(予算+CS で専門席を充足するアクション)を許可するか */
+  outsourceEnabled: boolean
+  /** 外注1回の予算コスト */
+  outsourceBudgetCost: number
+  /** 外注1回の CS コスト(クライアントC重み適用) */
+  outsourceCsCost: number
+  /** 外注の回数上限/フェーズ */
+  outsourcePerPhase: number
 }
 
 /** RULES.md §8 の初期値 */
@@ -100,4 +120,14 @@ export const DEFAULT_CONFIG: GameConfig = {
   milestonesEnabled: true,
   milestoneCount: 3,
   personalGoalChoices: 2,
+  // ── v2.2: 配属トリアージ(既定オフ。ホットシートUI側でオンにして手触り確認する)──
+  mismatchEnabled: false,
+  understaffFatigue: 1,
+  understaffDowngrade: true,
+  understaffCsPenalty: 1,
+  overqualifiedDiscount: 0,
+  outsourceEnabled: false,
+  outsourceBudgetCost: 4,
+  outsourceCsCost: 1,
+  outsourcePerPhase: 1,
 }

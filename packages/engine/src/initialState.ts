@@ -47,6 +47,7 @@ export function createInitialState(): GameState {
     nextTaskCostModifier: 0,
     remainingFireDraws: 0,
     pendingEpidemicCount: 0,
+    outsourceCountThisPhase: 0,
     phaseStartReplenish: null,
     fireLog: [],
     taskParticipants: {},

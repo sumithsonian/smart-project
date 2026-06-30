@@ -11,6 +11,7 @@ import { handleResolveEvent } from './actions/events'
 import {
   handleDeclareReady,
   handleExtraBilling,
+  handleOutsourceTask,
   handlePlaceToken,
   handleRest,
   handleRetrieveToken,
@@ -73,6 +74,8 @@ function dispatch(state: GameState, action: GameAction): GameState | RuleViolati
       return handleExtinguishFire(state, action)
     case 'SELECT_EPIDEMIC_TARGET':
       return handleSelectEpidemicTarget(state, action)
+    case 'OUTSOURCE_TASK':
+      return handleOutsourceTask(state, action)
     default: {
       // 網羅性チェック:GameAction に新しい型を足したらここでコンパイルエラーになる
       const exhaustive: never = action

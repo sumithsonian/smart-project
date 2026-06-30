@@ -7,7 +7,13 @@ import type { GameConfig, Role } from '@smart-project/engine'
 const { dispatch } = useGame()
 
 const seed = ref(Math.floor(Math.random() * 2 ** 31)) // UI 側でシード生成(エンジンには渡すだけ)
-const config = reactive<GameConfig>({ ...DEFAULT_CONFIG })
+// v2.2 配属トリアージは手触り確認のため UI 既定でオン(エンジン既定はオフ=v2.1互換)
+const config = reactive<GameConfig>({
+  ...DEFAULT_CONFIG,
+  mismatchEnabled: true,
+  outsourceEnabled: true,
+  overqualifiedDiscount: 1,
+})
 const clientId = ref<string>('')
 const projectCardId = ref<string>('')
 const projectSheetId = ref<string>(DEFAULT_CONTENT.projectSheets[0]!.id)
@@ -43,6 +49,15 @@ const fireFields: Array<{ key: keyof GameConfig; label: string }> = [
   { key: 'epidemicCount', label: '大炎上カード数' },
   { key: 'milestoneCount', label: 'マイルストーン数' },
   { key: 'personalGoalChoices', label: '個人目標の配布枚数' },
+]
+
+const triageFields: Array<{ key: keyof GameConfig; label: string }> = [
+  { key: 'understaffFatigue', label: 'やっつけ追加疲労' },
+  { key: 'understaffCsPenalty', label: 'やっつけCS債務' },
+  { key: 'overqualifiedDiscount', label: '過剰スペック割引' },
+  { key: 'outsourceBudgetCost', label: '外注の予算コスト' },
+  { key: 'outsourceCsCost', label: '外注のCSコスト' },
+  { key: 'outsourcePerPhase', label: '外注上限/フェーズ' },
 ]
 
 function start() {
@@ -131,6 +146,29 @@ function start() {
             <input v-model="config.milestonesEnabled" type="checkbox" />
           </label>
           <label v-for="f in fireFields" :key="f.key">
+            {{ f.label }}
+            <input v-model.number="(config[f.key] as number)" type="number" />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>v2.2 配属トリアージ(スキルと配属)</legend>
+        <p class="muted hint">
+          スキル未達のタスクを「やっつけ」(成果物ダウン+疲労+CS債務)で解決可能にし、過剰スペックには割引、
+          外注で専門席を金で充足できる。供給&lt;需要の配属トリアージを試す実験機能。
+        </p>
+        <div class="config-grid">
+          <label>🎓 やっつけ解決を許可
+            <input v-model="config.mismatchEnabled" type="checkbox" />
+          </label>
+          <label>📉 やっつけで成果物ダウン
+            <input v-model="config.understaffDowngrade" type="checkbox" />
+          </label>
+          <label>🏷️ 外注を許可
+            <input v-model="config.outsourceEnabled" type="checkbox" />
+          </label>
+          <label v-for="f in triageFields" :key="f.key">
             {{ f.label }}
             <input v-model.number="(config[f.key] as number)" type="number" />
           </label>
