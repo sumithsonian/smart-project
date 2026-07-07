@@ -6,7 +6,77 @@
 import { computed } from 'vue'
 import type { TaskInstance, TaskTile } from '@smart-project/engine'
 
-const { state, dispatch, tile, selectedTaskId, requirementCard, playerColor } = useGame()
+const {
+  state,
+  dispatch,
+  tile,
+  selectedTaskId,
+  requirementCard,
+  playerColor,
+  skillLabels,
+  workerMode,
+  seatOccupant,
+  supportCountOf,
+  supportWorkerIds,
+  extinguishPledgeCountOf,
+} = useGame()
+
+/** 外注が自動充足する専門席のインデックス(未充足の専門席のうち先頭。engine の resolveTask と同じ規則) */
+function outsourceSeatIndex(t: TaskInstance): number {
+  if (!t.outsourced) return -1
+  const def = tile(t.tileId)
+  if (!def) return -1
+  return def.seats.findIndex((s, i) => s.skill !== null && !seatOccupant(t.tileId, i))
+}
+
+/** 席の占有者がスキル条件を満たしているか(専門席のみ意味を持つ) */
+function seatMismatch(t: TaskInstance, seatIndex: number): boolean {
+  const def = tile(t.tileId)
+  const seat = def?.seats[seatIndex]
+  if (!seat || seat.skill === null) return false
+  const occupantId = seatOccupant(t.tileId, seatIndex)
+  if (!occupantId) return false
+  const occupant = state.value.players.find((p) => p.id === occupantId)
+  return !occupant || occupant.skills[seat.skill] < seat.level
+}
+
+/** v3.0 ワーカーモード時の不足要件(トークン数の代わりに席の空き・応援・スキル不足を見る) */
+function workerShortfalls(t: TaskInstance): string[] {
+  const def = tile(t.tileId)
+  if (!def || t.resolved) return []
+  const result: string[] = []
+  const mismatch = state.value.config.mismatchEnabled
+  const yarra = '→ やっつけ可(成果物ダウン+疲労+CS債務)'
+
+  const openCount = def.seats.filter(
+    (_, i) => !seatOccupant(t.tileId, i) && i !== outsourceSeatIndex(t),
+  ).length
+  if (openCount > 0) {
+    result.push(`🪑 空席 ${def.seats.length - openCount}/${def.seats.length}`)
+  }
+  if (t.fire > 0 && supportCountOf(t.tileId) < t.fire) {
+    result.push(`🆘 応援不足(${supportCountOf(t.tileId)}/${t.fire})`)
+  }
+  for (let i = 0; i < def.seats.length; i++) {
+    if (seatMismatch(t, i)) {
+      const seat = def.seats[i]!
+      result.push(
+        `🎓 ${skillLabels[seat.skill!]} Lv${seat.level} 未達${mismatch ? ` ${yarra}` : 'を満たしていません'}`,
+      )
+    }
+  }
+  for (const dep of def.dependsOn) {
+    const parent = state.value.taskArea.find((x) => x.tileId === dep)
+    if (parent && !parent.resolved) {
+      result.push(`⬆ 親タスク「${tile(dep)?.name}」が未解決`)
+    }
+  }
+  const cost = Math.max(0, def.cost + state.value.nextTaskCostModifier)
+  if (cost > state.value.budget) {
+    result.push(`💰 予算不足の見込み(コスト${cost} > 予算${state.value.budget})`)
+  }
+  return result
+}
 
 /** 外注の実行(チームアクション。便宜上 PM を実行者にする) */
 function outsource(tileId: string) {
@@ -23,12 +93,6 @@ function canOutsource(t: TaskInstance): boolean {
   if (state.value.step !== 'planning') return false
   if (state.value.outsourceCountThisPhase >= state.value.config.outsourcePerPhase) return false
   return def.skillRequirement !== null || def.hiddenRequirement
-}
-
-const skillLabels: Record<string, string> = {
-  direction: 'ディレクション',
-  design: 'デザイン',
-  engineering: 'エンジニアリング',
 }
 
 function tokenSum(t: TaskInstance): number {
@@ -135,9 +199,14 @@ function shortfalls(t: TaskInstance): string[] {
   return result
 }
 
+/** 現在のモードに応じた不足要件一覧(v3.0 ワーカーモードでは席/応援基準) */
+function shortfallsOf(t: TaskInstance): string[] {
+  return workerMode.value ? workerShortfalls(t) : shortfalls(t)
+}
+
 function statusOf(t: TaskInstance): { label: string; kind: 'done' | 'ok' | 'warn' } {
   if (t.resolved) return { label: '解決済', kind: 'done' }
-  const list = shortfalls(t)
+  const list = shortfallsOf(t)
   if (list.length === 0) return { label: '実行可', kind: 'ok' }
   return { label: `不足 ${list.length}`, kind: 'warn' }
 }
@@ -169,8 +238,8 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
             <span class="tile-status" :class="statusOf(t).kind">
               {{ statusOf(t).label }}
               <span v-if="!t.resolved" class="tooltip">
-                <template v-if="shortfalls(t).length">
-                  <div v-for="(s, i) in shortfalls(t)" :key="i" class="tooltip-line">{{ s }}</div>
+                <template v-if="shortfallsOf(t).length">
+                  <div v-for="(s, i) in shortfallsOf(t)" :key="i" class="tooltip-line">{{ s }}</div>
                 </template>
                 <div v-else class="tooltip-line">✅ 現在の配置で解決できます</div>
                 <div v-if="tileDef(t)?.hiddenRequirement && !t.appliedRequirementId" class="tooltip-line muted-line">
@@ -180,7 +249,7 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
             </span>
           </div>
 
-          <div class="tile-cost-row">
+          <div v-if="!workerMode" class="tile-cost-row">
             <span class="pip-row" title="必要トークン(🔥で増加)">
               <span
                 v-for="i in requiredOf(t)"
@@ -191,6 +260,47 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
             </span>
             <span class="muted">{{ tokenSum(t) }}/{{ requiredOf(t) }}</span>
             <span v-if="t.fire > 0" class="fire-badge">🔥×{{ t.fire }}</span>
+          </div>
+
+          <!-- v3.0 ワーカーモード:席(専門席/人手席)+ 応援 -->
+          <div v-else class="seat-row">
+            <span v-if="t.fire > 0" class="fire-badge">🔥×{{ t.fire }}</span>
+            <span
+              v-for="(seat, i) in tileDef(t)?.seats ?? []"
+              :key="i"
+              class="seat-chip"
+              :class="{
+                filled: !!seatOccupant(t.tileId, i),
+                outsourced: outsourceSeatIndex(t) === i,
+                mismatch: seatMismatch(t, i),
+              }"
+              :style="
+                seatOccupant(t.tileId, i)
+                  ? { background: playerColor(seatOccupant(t.tileId, i)!), borderColor: playerColor(seatOccupant(t.tileId, i)!) }
+                  : {}
+              "
+              :title="seat.skill ? `専門席:${skillLabels[seat.skill]}Lv${seat.level}` : '人手席(誰でも可)'"
+            >
+              <span class="seat-label">{{ seat.skill ? `${skillLabels[seat.skill].slice(0, 2)}Lv${seat.level}` : '人手' }}</span>
+              <span v-if="seatOccupant(t.tileId, i)" class="seat-occupant">{{ playerName(seatOccupant(t.tileId, i)!).slice(0, 6) }}</span>
+              <span v-else-if="outsourceSeatIndex(t) === i" class="seat-occupant">🏷️外注</span>
+              <span v-else class="seat-empty">空席</span>
+            </span>
+            <span v-if="t.fire > 0" class="support-chip" :class="{ short: supportCountOf(t.tileId) < t.fire }">
+              🆘応援 {{ supportCountOf(t.tileId) }}/{{ t.fire }}
+              <template v-if="supportWorkerIds(t.tileId).length">
+                :
+                <span
+                  v-for="id in supportWorkerIds(t.tileId)"
+                  :key="id"
+                  class="token-chip"
+                  :style="{ background: playerColor(id) }"
+                >{{ playerName(id).slice(0, 6) }}</span>
+              </template>
+            </span>
+            <span v-if="t.fire > 0 && extinguishPledgeCountOf(t.tileId) > 0" class="badge">
+              🧯消火予定×{{ extinguishPledgeCountOf(t.tileId) }}
+            </span>
           </div>
 
           <div class="tile-meta">
@@ -228,7 +338,7 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
             <span class="muted">成果物</span>
           </div>
 
-          <div v-if="placers(t).length" class="tile-tokens">
+          <div v-if="!workerMode && placers(t).length" class="tile-tokens">
             <span v-for="p in placers(t)" :key="p.id" class="token-chip" :style="{ background: playerColor(p.id) }">
               {{ playerName(p.id).slice(0, 6) }}×{{ p.count }}
             </span>
@@ -240,8 +350,11 @@ function tileDef(t: TaskInstance): TaskTile | undefined {
         </div>
       </div>
     </div>
-    <p class="muted">
+    <p v-if="!workerMode" class="muted">
       タイルをクリックで選択 → 個人ボードの「配置」「回収」。ステータス(実行可/不足)にカーソルを乗せると詳細が見えます。
+    </p>
+    <p v-else class="muted">
+      タイルをクリックで選択 → 個人ボードの配属UIで席・応援・消火を選んで「配属」。ステータス(実行可/不足)にカーソルを乗せると詳細が見えます。
     </p>
   </section>
 </template>

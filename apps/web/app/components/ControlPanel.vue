@@ -2,8 +2,17 @@
 /** 進行コントロール:イベント解決・要件カード選択・タスク処理順宣言・タスク解決・フェーズ進行 */
 import { computed, ref, watch } from 'vue'
 
-const { state, dispatch, tile, eventCard, limitEventCard, requirementCard, content, personalGoal } =
-  useGame()
+const {
+  state,
+  dispatch,
+  tile,
+  eventCard,
+  limitEventCard,
+  requirementCard,
+  content,
+  personalGoal,
+  workerMode,
+} = useGame()
 
 // ── 個人目標の選択(v2.1)──
 const goalPendingPlayers = computed(() =>
@@ -160,7 +169,14 @@ const requirementOptions = computed(() => {
 
     <!-- プランニング中 -->
     <div v-else-if="state.step === 'planning'">
-      <p class="muted">
+      <h3 v-if="workerMode">
+        🗓 フェーズ{{ state.phase }} 第{{ state.week }}週<span class="muted">/{{ state.config.roundsPerPhase }}週</span>
+      </h3>
+      <p v-if="workerMode" class="muted">
+        今週の配属(主担当+任意の残業)を決めて、各自「準備完了」を押してください
+        ({{ state.readyPlayerIds.length }}/{{ state.players.length }})。全員そろうと週末解決へ進みます。
+      </p>
+      <p v-else class="muted">
         全員で相談しながらトークンを配置し、各自「準備完了」を押してください
         ({{ state.readyPlayerIds.length }}/{{ state.players.length }})。
       </p>
@@ -169,6 +185,10 @@ const requirementOptions = computed(() => {
       </p>
       <p v-if="state.config.outsourceEnabled" class="muted hint">
         🏷️ 外注:このフェーズ残り {{ Math.max(0, state.config.outsourcePerPhase - state.outsourceCountThisPhase) }} 回(タスクの「外注」ボタン)。
+      </p>
+      <p v-if="workerMode" class="muted hint">
+        💴 追加請求(PM のフリーアクション):このフェーズ残り
+        {{ Math.max(0, state.config.extraBillingPerPhase - state.extraBillingUsedThisPhase) }} 回(個人ボードの PM 欄)。
       </p>
     </div>
 

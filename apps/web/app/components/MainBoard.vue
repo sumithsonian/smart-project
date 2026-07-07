@@ -2,7 +2,7 @@
 /** メインボード:CS・予算・フェーズ・クライアント/プロジェクト情報 */
 import { computed } from 'vue'
 
-const { state, content } = useGame()
+const { state, content, workerMode } = useGame()
 
 const client = computed(() => content.value.clients.find((c) => c.id === state.value.clientId))
 const project = computed(() =>
@@ -49,6 +49,10 @@ const phaseNames = ['企画・要件定義', '設計・デザイン', '開発', 
       <div class="track">
         <span class="track-label">フェーズ</span>
         <span class="track-value">{{ state.phase }}<span class="muted">/{{ state.config.phases }}</span></span>
+      </div>
+      <div v-if="workerMode" class="track">
+        <span class="track-label">週</span>
+        <span class="track-value">{{ state.week }}<span class="muted">/{{ state.config.roundsPerPhase }}</span></span>
       </div>
       <div class="track">
         <span class="track-label">成果物</span>

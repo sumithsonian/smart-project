@@ -235,6 +235,37 @@ input[type='number'] { width: 70px; }
 .deliverable.lv1 { background: #e2e8f0; color: #334155; }
 .deliverable.lv2 { background: #fbbf24; color: #713f12; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
 
+/* v3.0 週次ワーカーコミット:席・応援(タスクエリア) */
+.seat-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.seat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 46px;
+  border: 1.5px dashed #b9b1a0;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  background: #fff;
+}
+.seat-chip.filled { border-style: solid; color: #fff; }
+.seat-chip.outsourced { border-style: solid; border-color: #a855f7; background: #fae8ff; color: #86198f; }
+.seat-chip.mismatch { outline: 2px solid #dc2626; outline-offset: 1px; }
+.seat-label { font-weight: 700; }
+.seat-empty { opacity: 0.7; }
+.support-chip {
+  font-size: 0.72rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 999px;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.support-chip:not(.short) { background: #dcfce7; color: #166534; }
+
 .tile-tokens { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .token-chip {
   color: #fff;
@@ -264,6 +295,11 @@ input[type='number'] { width: 70px; }
 .secret-bg { background: #fdf4ff; border: 1px dashed #e9d5ff; }
 .player-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .learn-group { display: inline-flex; gap: 2px; }
+
+/* v3.0 週次ワーカーコミット:配属UI(個人ボード) */
+.worker-actions { flex-direction: column; align-items: stretch; gap: 6px; }
+.assign-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.assign-label { font-size: 0.78rem; font-weight: 700; color: #6b6455; min-width: 44px; }
 
 /* マイルストーン */
 .milestone-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

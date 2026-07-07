@@ -7,12 +7,14 @@ import type { GameConfig, Role } from '@smart-project/engine'
 const { dispatch } = useGame()
 
 const seed = ref(Math.floor(Math.random() * 2 ** 31)) // UI 側でシード生成(エンジンには渡すだけ)
-// v2.2 配属トリアージは手触り確認のため UI 既定でオン(エンジン既定はオフ=v2.1互換)
+// v2.2 配属トリアージ / v3.0 週次ワーカーコミットは手触り確認のため UI 既定でオン
+// (エンジン既定はどちらもオフ=v2.1・v2.2互換。DEFAULT_CONFIG 自体は変更しない)
 const config = reactive<GameConfig>({
   ...DEFAULT_CONFIG,
   mismatchEnabled: true,
   outsourceEnabled: true,
   overqualifiedDiscount: 1,
+  workerCommitEnabled: true,
 })
 const clientId = ref<string>('')
 const projectCardId = ref<string>('')
@@ -58,6 +60,16 @@ const triageFields: Array<{ key: keyof GameConfig; label: string }> = [
   { key: 'outsourceBudgetCost', label: '外注の予算コスト' },
   { key: 'outsourceCsCost', label: '外注のCSコスト' },
   { key: 'outsourcePerPhase', label: '外注上限/フェーズ' },
+]
+
+const workerFields: Array<{ key: keyof GameConfig; label: string }> = [
+  { key: 'roundsPerPhase', label: '1フェーズの週数' },
+  { key: 'firePerRound', label: '炎上カード/週' },
+  { key: 'overtimeFatigue', label: '残業の即時疲労' },
+  { key: 'overtimeMaxPerWeek', label: '残業枠数/週' },
+  { key: 'noOvertimeAtFatigueLv', label: '残業禁止の疲労Lv' },
+  { key: 'extraBillingPerPhase', label: '追加請求上限/フェーズ' },
+  { key: 'learnWeeksPerLevel', label: '学習1Lvに必要な週数' },
 ]
 
 function start() {
@@ -169,6 +181,23 @@ function start() {
             <input v-model="config.outsourceEnabled" type="checkbox" />
           </label>
           <label v-for="f in triageFields" :key="f.key">
+            {{ f.label }}
+            <input v-model.number="(config[f.key] as number)" type="number" />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>v3.0 週次ワーカーコミット(席モデル)</legend>
+        <p class="muted hint">
+          行動トークンの代わりに「プレイヤー本人」を毎週配属する。1フェーズ = 複数週(朝会→週末解決)。
+          主担当1つ + 任意の残業1枠(疲労が高いと不可)。オンにすると旧来のトークン配置UIは隠れます。
+        </p>
+        <div class="config-grid">
+          <label>👷 週次ワーカーコミット
+            <input v-model="config.workerCommitEnabled" type="checkbox" />
+          </label>
+          <label v-for="f in workerFields" :key="f.key">
             {{ f.label }}
             <input v-model.number="(config[f.key] as number)" type="number" />
           </label>

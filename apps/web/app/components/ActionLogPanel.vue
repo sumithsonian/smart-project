@@ -3,12 +3,16 @@
 import { ref } from 'vue'
 import type { GameAction } from '@smart-project/engine'
 
-const { actions, state, undo, reset, exportLogJson } = useGame()
+const { actions, state, undo, reset, exportLogJson, targetLabel } = useGame()
 const copied = ref(false)
 
 function describe(action: GameAction): string {
   const name = (id: string) => state.value.players.find((p) => p.id === id)?.name ?? id
   switch (action.type) {
+    case 'ASSIGN_WORKER':
+      return `${name(action.playerId)}: 配属${action.overtime ? '(残業)' : ''} → ${targetLabel(action.target)}`
+    case 'UNASSIGN_WORKER':
+      return `${name(action.playerId)}: 配属取消${action.overtime ? '(残業)' : ''}`
     case 'SETUP_GAME':
       return `セットアップ(seed=${action.seed})`
     case 'PLACE_TOKEN':

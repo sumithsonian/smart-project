@@ -11,16 +11,30 @@ import {
   replay,
   DEFAULT_CONTENT,
 } from '@smart-project/engine'
-import type { GameAction, GameState, RuleViolation } from '@smart-project/engine'
+import type {
+  GameAction,
+  GameState,
+  RuleViolation,
+  SkillKind,
+  WeekAssignment,
+  WorkerTarget,
+} from '@smart-project/engine'
 
 const actions = ref<GameAction[]>([])
 const state = shallowRef<GameState>(createInitialState())
 const lastViolation = ref<RuleViolation | null>(null)
-/** UI 上で選択中のタスク(配置・回収の対象) */
+/** UI 上で選択中のタスク(配置・回収 / v3.0 では配属先タスクの選択に使う) */
 const selectedTaskId = ref<string | null>(null)
 
 /** プレイヤーカラー(個人ボード・トークンチップで共通使用) */
 export const PLAYER_COLORS = ['#2563eb', '#16a34a', '#ea580c', '#9333ea', '#0891b2']
+
+/** スキル系統の日本語ラベル(タスクエリア・個人ボード・v3.0 席表示で共通使用) */
+export const SKILL_LABELS: Record<SkillKind, string> = {
+  direction: 'ディレクション',
+  design: 'デザイン',
+  engineering: 'エンジニアリング',
+}
 
 export function useGame() {
   function dispatch(action: GameAction): boolean {
@@ -81,6 +95,73 @@ export function useGame() {
     return PLAYER_COLORS[index >= 0 ? index % PLAYER_COLORS.length : 0]!
   }
 
+  // ── v3.0 週次ワーカーコミット:配属(assignments)参照ヘルパ ──
+  // packages/engine の helpers.ts(seatOccupants/supportCount 相当)は index.ts から
+  // 公開されていないため、UI 表示用に state.assignments から同じロジックをここで導出する。
+  /** ワーカーモードが有効か */
+  const workerMode = computed(() => state.value.config.workerCommitEnabled)
+
+  /** タスクの席の占有者(seatIndex → playerId) */
+  function seatOccupants(taskTileId: string): Map<number, string> {
+    const map = new Map<number, string>()
+    for (const a of state.value.assignments) {
+      if (a.target.kind === 'seat' && a.target.taskTileId === taskTileId) {
+        map.set(a.target.seatIndex, a.playerId)
+      }
+    }
+    return map
+  }
+  /** 指定席の占有者(未配属なら undefined) */
+  function seatOccupant(taskTileId: string, seatIndex: number): string | undefined {
+    return seatOccupants(taskTileId).get(seatIndex)
+  }
+  /** タスクの空席インデックス一覧 */
+  function openSeatIndices(taskTileId: string): number[] {
+    const t = tile(taskTileId)
+    if (!t) return []
+    const occupied = seatOccupants(taskTileId)
+    return t.seats.map((_, i) => i).filter((i) => !occupied.has(i))
+  }
+  /** タスクへ応援配属しているプレイヤーID */
+  function supportWorkerIds(taskTileId: string): string[] {
+    return state.value.assignments
+      .filter((a) => a.target.kind === 'support' && a.target.taskTileId === taskTileId)
+      .map((a) => a.playerId)
+  }
+  /** タスクへの応援(support)人数 */
+  function supportCountOf(taskTileId: string): number {
+    return supportWorkerIds(taskTileId).length
+  }
+  /** タスクへの消火宣言数(v3.0。今週末に🔥を1個ずつ除去する) */
+  function extinguishPledgeCountOf(taskTileId: string): number {
+    return state.value.assignments.filter(
+      (a) => a.target.kind === 'extinguish' && a.target.taskTileId === taskTileId,
+    ).length
+  }
+  /** プレイヤーの今週の配属(主担当 or 残業)を引く */
+  function assignmentOf(playerId: string, overtime: boolean): WeekAssignment | undefined {
+    return state.value.assignments.find((a) => a.playerId === playerId && a.overtime === overtime)
+  }
+  /** 配属先の表示ラベル */
+  function targetLabel(target: WorkerTarget): string {
+    switch (target.kind) {
+      case 'seat': {
+        const t = tile(target.taskTileId)
+        const seat = t?.seats[target.seatIndex]
+        const seatLabel = seat?.skill ? `${SKILL_LABELS[seat.skill]}Lv${seat.level}` : '人手'
+        return `${t?.name ?? target.taskTileId} — ${seatLabel}席`
+      }
+      case 'support':
+        return `${tile(target.taskTileId)?.name ?? target.taskTileId} — 応援`
+      case 'learning':
+        return `学習(${SKILL_LABELS[target.skill]})`
+      case 'rest':
+        return '休憩'
+      case 'extinguish':
+        return `${tile(target.taskTileId)?.name ?? target.taskTileId} — 消火`
+    }
+  }
+
   return {
     actions,
     state,
@@ -99,5 +180,16 @@ export function useGame() {
     personalGoal,
     roleName,
     playerColor,
+    // v3.0 週次ワーカーコミット
+    skillLabels: SKILL_LABELS,
+    workerMode,
+    seatOccupants,
+    seatOccupant,
+    openSeatIndices,
+    supportWorkerIds,
+    supportCountOf,
+    extinguishPledgeCountOf,
+    assignmentOf,
+    targetLabel,
   }
 }
