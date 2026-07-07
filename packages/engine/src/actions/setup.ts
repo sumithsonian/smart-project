@@ -129,8 +129,9 @@ export function handleSetupGame(
         roleDef.initialSkills.direction +
         roleDef.initialSkills.design +
         roleDef.initialSkills.engineering,
-      tokens: config.tokensPerPhase,
+      tokens: config.workerCommitEnabled ? 0 : config.tokensPerPhase,
       nextPhaseTokenPenalty: 0,
+      overtimeBanPhase: 0,
       personalGoalId: goalChoices === 1 ? dealt[0]!.id : '',
       goalOptionIds: goalChoices === 1 ? [] : dealt.map((g) => g.id),
       learningProgress: { direction: 0, design: 0, engineering: 0 },
@@ -190,6 +191,9 @@ export function handleSetupGame(
     remainingFireDraws: 0,
     pendingEpidemicCount: 0,
     outsourceCountThisPhase: 0,
+    week: config.workerCommitEnabled ? 1 : 0,
+    assignments: [],
+    extraBillingUsedThisPhase: 0,
     phaseStartReplenish: null,
     fireLog: [],
     taskParticipants: {},

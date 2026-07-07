@@ -4,6 +4,7 @@
  */
 import type { GameConfig } from './config'
 import type { DeliverableLevel, GameContent, Role, SkillKind } from './content'
+import type { WorkerTarget } from './actions'
 
 /** 現在のステップ(goal_selection は v2.1 の個人目標選択) */
 export type GameStep =
@@ -26,6 +27,16 @@ export interface DeckState {
   drawPile: string[]
   /** 捨て札 */
   discardPile: string[]
+}
+
+/** 今週のワーカー配属(v3.0。効果は週末=全員Ready時に適用) */
+export interface WeekAssignment {
+  /** プレイヤーID */
+  playerId: string
+  /** 配属先 */
+  target: WorkerTarget
+  /** 残業枠か(残業は週末に overtimeFatigue の疲労を受ける) */
+  overtime: boolean
 }
 
 /** タスクエリア上のタスクインスタンス */
@@ -90,8 +101,10 @@ export interface PlayerState {
   extinguishCount: number
   /** 累計スキルアップ回数(v2.1) */
   skillUpCount: number
-  /** 今フェーズにタスクへ配置したトークン数(v2.1 マイルストーン用) */
+  /** 今フェーズにタスクへ配置したトークン数(v2.1 マイルストーン用。ワーカーモードでは配属数) */
   tokensPlacedThisPhase: number
+  /** このフェーズは残業禁止(v3.0。限界イベント TOKEN_PENALTY_NEXT の読み替え。0=なし) */
+  overtimeBanPhase: number
 }
 
 /** 解決待ちイベント */
@@ -215,6 +228,12 @@ export interface GameState {
   pendingEpidemicCount: number
   /** 今フェーズの外注実行回数(v2.2。outsourcePerPhase で上限。フェーズ開始時に0) */
   outsourceCountThisPhase: number
+  /** 現在の週(v3.0 ワーカーモード。1〜roundsPerPhase。レガシーモードでは 0) */
+  week: number
+  /** 今週のワーカー配属(v3.0。週末に効果適用、週開始時にクリア) */
+  assignments: WeekAssignment[]
+  /** 今フェーズの追加請求実行回数(v3.0。extraBillingPerPhase で上限) */
+  extraBillingUsedThisPhase: number
   /** 炎上フロー完了後にフェーズ開始イベントを引く際の補充フラグ(フロー外なら null) */
   phaseStartReplenish: boolean | null
   /** 今フェーズの炎上レポート(UI 表示用。フェーズ開始時にクリア) */

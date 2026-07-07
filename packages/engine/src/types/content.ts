@@ -19,6 +19,17 @@ export interface SkillRequirement {
   level: number
 }
 
+/**
+ * タスクの席(v3.0 ワーカーモード。rules-v3-proposal.md §2)
+ * 専門席は指定系統のスキルが必要。人手席(skill: null)は誰でも立てる。
+ */
+export interface TaskSeat {
+  /** 専門席の系統(人手席なら null) */
+  skill: SkillKind | null
+  /** 必要レベル(専門席のみ意味を持つ) */
+  level: number
+}
+
 /** タスクタイルの特殊効果 */
 export type TaskSpecialEffect =
   /** 次タスクの実行コスト減 */
@@ -32,8 +43,10 @@ export interface TaskTile {
   name: string
   /** 対応フェーズ(1〜4) */
   phase: number
-  /** 必要行動トークン数(積み上げ式で充足) */
+  /** 必要行動トークン数(積み上げ式で充足。v1/v2 モード用) */
   requiredTokens: number
+  /** 席の定義(v3.0 ワーカーモード用。🔥1個につき応援1人の追加需要が乗る) */
+  seats: TaskSeat[]
   /** 成果物獲得(0〜2個、各 Lv1/Lv2) */
   deliverables: DeliverableLevel[]
   /** スキル条件(なしの場合 null) */

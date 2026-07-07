@@ -23,6 +23,7 @@ import {
 } from './actions/execution'
 import { handleAdvancePhase } from './actions/phaseEnd'
 import { handleExtinguishFire, handleSelectEpidemicTarget } from './actions/fire'
+import { handleAssignWorker, handleUnassignWorker } from './actions/worker'
 import { checkMilestones } from './actions/milestones'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
@@ -76,6 +77,10 @@ function dispatch(state: GameState, action: GameAction): GameState | RuleViolati
       return handleSelectEpidemicTarget(state, action)
     case 'OUTSOURCE_TASK':
       return handleOutsourceTask(state, action)
+    case 'ASSIGN_WORKER':
+      return handleAssignWorker(state, action)
+    case 'UNASSIGN_WORKER':
+      return handleUnassignWorker(state, action)
     default: {
       // 網羅性チェック:GameAction に新しい型を足したらここでコンパイルエラーになる
       const exhaustive: never = action

@@ -172,7 +172,10 @@ export function beginPhaseStart(state: GameState, replenish: boolean): GameState
     ...state,
     rng,
     decks: { ...state.decks, fires: { ...state.decks.fires, drawPile } },
-    remainingFireDraws: state.config.firePerPhase,
+    // ワーカーモード(v3.0)では毎週引くため、第1週ぶんは firePerRound 枚
+    remainingFireDraws: state.config.workerCommitEnabled
+      ? state.config.firePerRound
+      : state.config.firePerPhase,
     phaseStartReplenish: replenish,
     fireLog: [],
   }
@@ -218,6 +221,12 @@ export function handleExtinguishFire(
   state: GameState,
   action: Extract<GameAction, { type: 'EXTINGUISH_FIRE' }>,
 ): GameState | RuleViolation {
+  if (state.config.workerCommitEnabled) {
+    return violation(
+      'WORKER_MODE',
+      'ワーカーモードの消火は配属で行います(ASSIGN_WORKER の extinguish)。',
+    )
+  }
   if (state.step !== 'planning') {
     return violation('INVALID_STEP', '消火はプランニングステップ中のみ可能です。')
   }

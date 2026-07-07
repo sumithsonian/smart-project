@@ -20,8 +20,12 @@ import {
   getRequirementCard,
   getTile,
   maybeStartLimitEvent,
+  seatOccupants,
+  supportCount,
+  taskWorkerIds,
 } from '../helpers'
 import { processPhaseEnd } from './phaseEnd'
+import { startNextWeek } from './worker'
 
 /** タスクエリアの未解決タスク一覧 */
 function unresolvedTasks(state: GameState): TaskInstance[] {
@@ -33,6 +37,9 @@ export function handleDeclareTaskOrder(
   state: GameState,
   action: Extract<GameAction, { type: 'DECLARE_TASK_ORDER' }>,
 ): GameState | RuleViolation {
+  if (state.config.workerCommitEnabled) {
+    return violation('WORKER_MODE', 'ワーカーモードでは処理順は自動(定義順=親→子)です。')
+  }
   if (state.step !== 'execution') {
     return violation('INVALID_STEP', '実行ステップ以外ではタスク処理順を宣言できません。')
   }
@@ -121,18 +128,46 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
     return violation('TASK_NOT_FOUND', `タスクが見つかりません: ${tileId}`)
   }
 
-  const ids = participantIds(instance)
+  const workerMode = state.config.workerCommitEnabled
+  const ids = workerMode ? taskWorkerIds(state, tileId) : participantIds(instance)
 
-  // ── 1. 必要トークン数の確認(🔥1個につき +1。不足ならこのフェーズは未解決のまま) ──
-  const requiredTokens = tile.requiredTokens + instance.fire
-  const totalTokens = Object.values(instance.tokens).reduce((a, b) => a + b, 0)
-  if (totalTokens < requiredTokens) {
-    return failTask(
-      state,
-      tile,
-      'NOT_ENOUGH_TOKENS',
-      `「${tile.name}」はトークン不足(${totalTokens}/${requiredTokens}${instance.fire > 0 ? `、🔥+${instance.fire}` : ''})のため未解決のまま残りました。`,
-    )
+  if (workerMode) {
+    // ── 1'. 席の充足確認(v3.0):全席に人が立ち、🔥ぶんの応援がいること ──
+    const occupants = seatOccupants(state, tileId)
+    // 外注は専門席1つを埋める(未充足の専門席のうち先頭)
+    let contractorSeat = -1
+    if (instance.outsourced) {
+      contractorSeat = tile.seats.findIndex((s, i) => s.skill !== null && !occupants.has(i))
+    }
+    const emptySeats = tile.seats.filter((_, i) => !occupants.has(i) && i !== contractorSeat)
+    if (emptySeats.length > 0) {
+      return failTask(
+        state,
+        tile,
+        'SEAT_NOT_FILLED',
+        `「${tile.name}」は席が埋まっていない(空席${emptySeats.length})ため未解決のまま残りました。`,
+      )
+    }
+    if (supportCount(state, tileId) < instance.fire) {
+      return failTask(
+        state,
+        tile,
+        'NOT_ENOUGH_SUPPORT',
+        `「${tile.name}」は🔥${instance.fire}個ぶんの応援が足りないため未解決のまま残りました。`,
+      )
+    }
+  } else {
+    // ── 1. 必要トークン数の確認(🔥1個につき +1。不足ならこのフェーズは未解決のまま) ──
+    const requiredTokens = tile.requiredTokens + instance.fire
+    const totalTokens = Object.values(instance.tokens).reduce((a, b) => a + b, 0)
+    if (totalTokens < requiredTokens) {
+      return failTask(
+        state,
+        tile,
+        'NOT_ENOUGH_TOKENS',
+        `「${tile.name}」はトークン不足(${totalTokens}/${requiredTokens}${instance.fire > 0 ? `、🔥+${instance.fire}` : ''})のため未解決のまま残りました。`,
+      )
+    }
   }
 
   // ── 依存チェック:未解決の親が残っていたら解決できない ──
@@ -148,8 +183,8 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
     }
   }
 
-  // ── 協業フラグ(暫定:複数プレイヤーのトークンが必須) ──
-  if (tile.collaboration && ids.length < 2) {
+  // ── 協業フラグ(暫定:複数プレイヤーのトークンが必須。ワーカーモードでは席に吸収済み) ──
+  if (!workerMode && tile.collaboration && ids.length < 2) {
     return failTask(
       state,
       tile,
@@ -162,7 +197,28 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
   // 配属トリアージ(v2.2):未達でも mismatchEnabled なら「やっつけ」で代償付き解決。
   // 外注済み(instance.outsourced)は専門席が充足されたものとして扱う。
   let understaffed = false
-  if (
+  if (workerMode) {
+    // v3.0:専門席ごとに、立っている本人が系統×Lvを満たすか確認する(外注席は免除)
+    const occupants = seatOccupants(state, tileId)
+    for (let i = 0; i < tile.seats.length; i++) {
+      const seat = tile.seats[i]!
+      if (seat.skill === null) continue
+      const occupantId = occupants.get(i)
+      if (occupantId === undefined) continue // 外注が埋めた席
+      const occupant = getPlayer(state, occupantId)!
+      if (occupant.skills[seat.skill] < seat.level) {
+        if (!state.config.mismatchEnabled) {
+          return failTask(
+            state,
+            tile,
+            'SKILL_NOT_MET',
+            `「${tile.name}」の専門席(${seat.skill} Lv${seat.level})に立つ ${occupant.name} のスキルが足りません。`,
+          )
+        }
+        understaffed = true
+      }
+    }
+  } else if (
     tile.skillRequirement &&
     !instance.outsourced &&
     !meetsSkill(state, ids, tile.skillRequirement)
@@ -224,16 +280,25 @@ function resolveTask(state: GameState, tileId: string): GameState | RuleViolatio
   const discountByCard = requirement?.effect.type === 'COST_DISCOUNT' ? requirement.effect.amount : 0
   // 過剰スペック割引(v2.2):必要Lvを超える参加者がいれば実行コスト減(やっつけ・外注時は対象外)
   let overqualDiscount = 0
-  if (
-    !understaffed &&
-    !instance.outsourced &&
-    tile.skillRequirement &&
-    state.config.overqualifiedDiscount > 0 &&
-    ids.some(
-      (id) => (getPlayer(state, id)?.skills[tile.skillRequirement!.skill] ?? 0) > tile.skillRequirement!.level,
-    )
-  ) {
-    overqualDiscount = state.config.overqualifiedDiscount
+  if (!understaffed && !instance.outsourced && state.config.overqualifiedDiscount > 0) {
+    if (workerMode) {
+      // v3.0:専門席に必要Lv超のプレイヤーが立っていれば割引
+      const occupants = seatOccupants(state, tileId)
+      const hasOverqualified = tile.seats.some((seat, i) => {
+        if (seat.skill === null) return false
+        const occupantId = occupants.get(i)
+        if (occupantId === undefined) return false
+        return (getPlayer(state, occupantId)?.skills[seat.skill] ?? 0) > seat.level
+      })
+      if (hasOverqualified) overqualDiscount = state.config.overqualifiedDiscount
+    } else if (
+      tile.skillRequirement &&
+      ids.some(
+        (id) => (getPlayer(state, id)?.skills[tile.skillRequirement!.skill] ?? 0) > tile.skillRequirement!.level,
+      )
+    ) {
+      overqualDiscount = state.config.overqualifiedDiscount
+    }
   }
   const cost = Math.max(
     0,
@@ -428,6 +493,10 @@ export function maybeFinishExecution(state: GameState): GameState {
     state.pendingLimitPlayerIds.length > 0
   ) {
     return state
+  }
+  // v3.0 ワーカーモード:週が残っていれば次の週へ。最終週ならフェーズ終了処理へ
+  if (state.config.workerCommitEnabled && state.week < state.config.roundsPerPhase) {
+    return startNextWeek(state)
   }
   return processPhaseEnd(state)
 }

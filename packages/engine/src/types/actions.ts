@@ -12,6 +12,19 @@ export type TokenTarget =
   /** 学習タイル(対象スキル系統を指定) */
   | { kind: 'learning'; skill: SkillKind }
 
+/** ワーカーの配属先(v3.0 週次ワーカーコミット) */
+export type WorkerTarget =
+  /** タスクの席(定義済みの専門席/人手席) */
+  | { kind: 'seat'; taskTileId: string; seatIndex: number }
+  /** 🔥ぶんの応援(席ではなく追加工数。🔥数まで) */
+  | { kind: 'support'; taskTileId: string }
+  /** 学習(今週は現場に立たない。フェーズ終了時に +Lv) */
+  | { kind: 'learning'; skill: SkillKind }
+  /** 休憩(疲労 -restRecovery) */
+  | { kind: 'rest' }
+  /** 消火(対象タスクの🔥1個を週末に除去) */
+  | { kind: 'extinguish'; taskTileId: string }
+
 /** セットアップ時のプレイヤー指定 */
 export interface PlayerSetup {
   /** プレイヤーID */
@@ -68,3 +81,7 @@ export type GameAction =
   | { type: 'SELECT_EPIDEMIC_TARGET'; playerId: string; taskTileId: string }
   /** 外注:予算+CS を払ってタスクの専門席を充足する(v2.2。プランニング中) */
   | { type: 'OUTSOURCE_TASK'; playerId: string; taskTileId: string }
+  /** 今週の配属を宣言する(v3.0。overtime=true は残業枠。朝会中のみ) */
+  | { type: 'ASSIGN_WORKER'; playerId: string; target: WorkerTarget; overtime?: boolean }
+  /** 今週の配属を取り消す(v3.0。朝会中のみ。効果は週末適用なので自由に組み替え可) */
+  | { type: 'UNASSIGN_WORKER'; playerId: string; overtime?: boolean }

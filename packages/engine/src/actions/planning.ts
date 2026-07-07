@@ -13,6 +13,15 @@ import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import { applyWeight, changeBudget, changeCs, getClient, getPlayer, getTile, updatePlayer } from '../helpers'
 import { firePhaseActive } from './fire'
+import { startWeekend } from './worker'
+
+/** ワーカーモードで廃止されたトークン系操作のガード(v3.0) */
+function guardNoWorkerMode(state: GameState): RuleViolation | null {
+  if (state.config.workerCommitEnabled) {
+    return violation('WORKER_MODE', 'ワーカーモードではこの操作は使えません(ASSIGN_WORKER を使ってください)。')
+  }
+  return null
+}
 
 /** プランニング中の共通ガード */
 function guardPlanning(state: GameState, playerId: string): RuleViolation | PlayerState {
@@ -44,6 +53,8 @@ export function handlePlaceToken(
   state: GameState,
   action: Extract<GameAction, { type: 'PLACE_TOKEN' }>,
 ): GameState | RuleViolation {
+  const workerGuard = guardNoWorkerMode(state)
+  if (workerGuard) return workerGuard
   const guard = guardPlanning(state, action.playerId)
   if (isViolation(guard)) return guard
   const player = guard
@@ -107,6 +118,8 @@ export function handleRetrieveToken(
   state: GameState,
   action: Extract<GameAction, { type: 'RETRIEVE_TOKEN' }>,
 ): GameState | RuleViolation {
+  const workerGuard = guardNoWorkerMode(state)
+  if (workerGuard) return workerGuard
   const guard = guardPlanning(state, action.playerId)
   if (isViolation(guard)) return guard
   const player = guard
@@ -155,6 +168,8 @@ export function handleRest(
   state: GameState,
   action: Extract<GameAction, { type: 'REST' }>,
 ): GameState | RuleViolation {
+  const workerGuard = guardNoWorkerMode(state)
+  if (workerGuard) return workerGuard
   const guard = guardPlanning(state, action.playerId)
   if (isViolation(guard)) return guard
   const player = guard
@@ -168,7 +183,10 @@ export function handleRest(
   }))
 }
 
-/** EXTRA_BILLING — 追加請求(CS と引き換えに予算回復。C 重みが CS コストに掛かる) */
+/**
+ * EXTRA_BILLING — 追加請求(CS と引き換えに予算回復。C 重みが CS コストに掛かる)
+ * ワーカーモード(v3.0)では PM のフリーアクション(トークン消費なし・フェーズ回数制限)。
+ */
 export function handleExtraBilling(
   state: GameState,
   action: Extract<GameAction, { type: 'EXTRA_BILLING' }>,
@@ -176,7 +194,17 @@ export function handleExtraBilling(
   const guard = guardPlanning(state, action.playerId)
   if (isViolation(guard)) return guard
   const player = guard
-  if (player.tokens < 1) {
+  if (state.config.workerCommitEnabled) {
+    if (player.role !== 'pm') {
+      return violation('NOT_PM', 'ワーカーモードの追加請求は PM のみ行えます。')
+    }
+    if (state.extraBillingUsedThisPhase >= state.config.extraBillingPerPhase) {
+      return violation(
+        'EXTRA_BILLING_LIMIT',
+        `追加請求はフェーズ${state.config.extraBillingPerPhase}回までです。`,
+      )
+    }
+  } else if (player.tokens < 1) {
     return violation('NOT_ENOUGH_TOKENS', '行動トークンが足りません。')
   }
   const client = getClient(state)
@@ -185,7 +213,9 @@ export function handleExtraBilling(
     client.weights.c,
     state.config.qcdWeightMode,
   )
-  let next = updatePlayer(state, player.id, (p) => ({ ...p, tokens: p.tokens - 1 }))
+  let next = state.config.workerCommitEnabled
+    ? { ...state, extraBillingUsedThisPhase: state.extraBillingUsedThisPhase + 1 }
+    : updatePlayer(state, player.id, (p) => ({ ...p, tokens: p.tokens - 1 }))
   next = changeBudget(next, state.config.extraBillingBudget)
   next = changeCs(next, -csCost)
   return next
@@ -267,6 +297,10 @@ export function handleDeclareReady(
   }
   const readyPlayerIds = [...state.readyPlayerIds, action.playerId]
   const allReady = readyPlayerIds.length === state.players.length
+  if (allReady && state.config.workerCommitEnabled) {
+    // v3.0:全員Ready = 週末。配属の効果を適用し、解決キューを自動生成する
+    return startWeekend({ ...state, readyPlayerIds })
+  }
   return {
     ...state,
     readyPlayerIds,

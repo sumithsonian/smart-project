@@ -50,6 +50,39 @@ export function getRequirementCard(state: GameState, cardId: string): Requiremen
   return state.content.requirements.find((c) => c.id === cardId)
 }
 
+/** タスクの席の占有者(v3.0 ワーカーモード。seatIndex → playerId) */
+export function seatOccupants(state: GameState, taskTileId: string): Map<number, string> {
+  const map = new Map<number, string>()
+  for (const a of state.assignments) {
+    if (a.target.kind === 'seat' && a.target.taskTileId === taskTileId) {
+      map.set(a.target.seatIndex, a.playerId)
+    }
+  }
+  return map
+}
+
+/** タスクへの応援(support)人数(v3.0。🔥ぶんの追加工数) */
+export function supportCount(state: GameState, taskTileId: string): number {
+  return state.assignments.filter(
+    (a) => a.target.kind === 'support' && a.target.taskTileId === taskTileId,
+  ).length
+}
+
+/** タスクに関与している(席 or 応援)プレイヤーID(v3.0。重複なし) */
+export function taskWorkerIds(state: GameState, taskTileId: string): string[] {
+  const ids: string[] = []
+  for (const a of state.assignments) {
+    if (
+      (a.target.kind === 'seat' || a.target.kind === 'support') &&
+      a.target.taskTileId === taskTileId &&
+      !ids.includes(a.playerId)
+    ) {
+      ids.push(a.playerId)
+    }
+  }
+  return ids
+}
+
 /** 1人のプレイヤーだけ差し替えた players 配列を返す */
 export function updatePlayer(
   state: GameState,

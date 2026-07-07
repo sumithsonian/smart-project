@@ -67,6 +67,20 @@ export type RuleViolationCode =
   | 'NO_SKILL_SEAT'
   /** フェーズの外注上限に達した */
   | 'OUTSOURCE_LIMIT'
+  /** ワーカーモードでは使えない操作(v3.0) */
+  | 'WORKER_MODE'
+  /** すでに配属済み(v3.0) */
+  | 'ALREADY_ASSIGNED'
+  /** 取り消せる配属がない(v3.0) */
+  | 'NO_ASSIGNMENT'
+  /** 席が見つからない・埋まっている(v3.0) */
+  | 'SEAT_UNAVAILABLE'
+  /** 応援の需要(🔥)がない(v3.0) */
+  | 'NO_SUPPORT_DEMAND'
+  /** 残業できない(上限・疲労・寝込み)(v3.0) */
+  | 'OVERTIME_FORBIDDEN'
+  /** 追加請求のフェーズ上限に達した(v3.0) */
+  | 'EXTRA_BILLING_LIMIT'
 
 /** ルール違反(applyAction が GameState の代わりに返す) */
 export interface RuleViolation {

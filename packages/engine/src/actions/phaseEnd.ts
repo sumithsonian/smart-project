@@ -57,6 +57,28 @@ export function processPhaseEnd(state: GameState): GameState {
     })),
   }
 
+  // ── 3'. 学習の反映(v3.0 ワーカーモード:学習週数 → スキルLv)──
+  if (next.config.workerCommitEnabled) {
+    next = {
+      ...next,
+      players: next.players.map((p) => {
+        let skills = { ...p.skills }
+        let progress = { ...p.learningProgress }
+        let ups = 0
+        for (const skill of ['direction', 'design', 'engineering'] as const) {
+          const gains = Math.floor(progress[skill] / next.config.learnWeeksPerLevel)
+          const applied = Math.min(gains, next.config.skillMax - skills[skill])
+          if (applied > 0) {
+            skills = { ...skills, [skill]: skills[skill] + applied }
+            ups += applied
+          }
+          progress = { ...progress, [skill]: progress[skill] % next.config.learnWeeksPerLevel }
+        }
+        return { ...p, skills, learningProgress: progress, skillUpCount: p.skillUpCount + ups }
+      }),
+    }
+  }
+
   // ── 4. トークン回収:解決済みタスクはエリアから除去(トークンはストックへ)。
   //       未解決タスクは carryOverTokens に従いトークンを持ち越す ──
   next = {
@@ -144,19 +166,31 @@ export function handleAdvancePhase(state: GameState): GameState | RuleViolation 
   }
 
   // ── 次フェーズ開始(RULES.md §2-1):タスク公開 → 炎上 → イベント → トークン補充 ──
+  const workerMode = state.config.workerCommitEnabled
+  const nextPhase = state.phase + 1
   let next: GameState = {
     ...state,
-    phase: state.phase + 1,
+    phase: nextPhase,
     step: 'planning',
     readyPlayerIds: [],
     resolutionQueue: null,
     resolutionLog: [],
     nextTaskCostModifier: 0,
     outsourceCountThisPhase: 0,
-    // フェーズ単位のカウンタ・記録をリセット
-    players: state.players.map((p) => ({ ...p, tokensPlacedThisPhase: 0 })),
+    // v3.0 ワーカーモード:週・配属・追加請求カウンタをリセット
+    week: workerMode ? 1 : state.week,
+    assignments: [],
+    extraBillingUsedThisPhase: 0,
+    // フェーズ単位のカウンタ・記録をリセット。
+    // ワーカーモードでは TOKEN_PENALTY_NEXT を「次フェーズは残業禁止」に読み替える
+    players: state.players.map((p) => ({
+      ...p,
+      tokensPlacedThisPhase: 0,
+      overtimeBanPhase: workerMode && p.nextPhaseTokenPenalty > 0 ? nextPhase : p.overtimeBanPhase,
+      nextPhaseTokenPenalty: workerMode ? 0 : p.nextPhaseTokenPenalty,
+    })),
     taskArea: state.taskArea.map((t) => ({ ...t, extinguisherIds: [] })),
   }
   next = publishPhaseTasks(next, next.phase)
-  return beginPhaseStart(next, true)
+  return beginPhaseStart(next, !workerMode)
 }

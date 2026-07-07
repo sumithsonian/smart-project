@@ -69,6 +69,24 @@ export interface GameConfig {
   /** 個人目標の配布枚数(1枚選ぶ。1なら従来どおり自動割当) */
   personalGoalChoices: number
 
+  // ── v3.0: 週次ワーカーコミット + 席(rules-v3-proposal.md §1・§2。false 既定で v2 互換)──
+  /** 週次ワーカーコミットを有効にするか(行動トークン廃止・席モデル・週次ラウンド) */
+  workerCommitEnabled: boolean
+  /** 1フェーズの週(ラウンド)数 */
+  roundsPerPhase: number
+  /** 週初に引く炎上カード枚数(ワーカーモードでは firePerPhase の代わりに使う) */
+  firePerRound: number
+  /** 残業(週2枠目)の即時疲労 */
+  overtimeFatigue: number
+  /** 1人・1週あたりの残業枠数 */
+  overtimeMaxPerWeek: number
+  /** この疲労Lv以上のプレイヤーは残業禁止 */
+  noOvertimeAtFatigueLv: number
+  /** 追加請求のフェーズ回数上限(ワーカーモードでは PM のフリーアクション) */
+  extraBillingPerPhase: number
+  /** スキル+1Lv に必要な学習週数 */
+  learnWeeksPerLevel: number
+
   // ── v2.2: 配属トリアージ(rules-v2-proposal.md §2。すべて false 既定で v2.1 互換)──
   /** スキル未達でも代償付きで解決する「やっつけ」を許可するか(false なら従来どおり解決失敗) */
   mismatchEnabled: boolean
@@ -120,6 +138,15 @@ export const DEFAULT_CONFIG: GameConfig = {
   milestonesEnabled: true,
   milestoneCount: 3,
   personalGoalChoices: 2,
+  // ── v3.0: 週次ワーカーコミット(既定オフ=v2互換。ホットシートUI側でオンにする)──
+  workerCommitEnabled: false,
+  roundsPerPhase: 3,
+  firePerRound: 1,
+  overtimeFatigue: 1,
+  overtimeMaxPerWeek: 1,
+  noOvertimeAtFatigueLv: 2,
+  extraBillingPerPhase: 1,
+  learnWeeksPerLevel: 1,
   // ── v2.2: 配属トリアージ(既定オフ。ホットシートUI側でオンにして手触り確認する)──
   mismatchEnabled: false,
   understaffFatigue: 1,
