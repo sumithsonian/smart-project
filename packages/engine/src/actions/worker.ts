@@ -130,6 +130,20 @@ export function handleAssignWorker(
   }
   const invalid = validateTarget(state, action.target)
   if (invalid) return invalid
+  // 1人=1体:同じタスクの席/応援に同一人物が重複して立つことはできない
+  // (2席タスク=協業(異なる2人)の担保。主担当+残業での「自己協業」を防ぐ)
+  if (action.target.kind === 'seat' || action.target.kind === 'support') {
+    const tileId = action.target.taskTileId
+    const alreadyOnTask = state.assignments.some(
+      (a) =>
+        a.playerId === player.id &&
+        (a.target.kind === 'seat' || a.target.kind === 'support') &&
+        a.target.taskTileId === tileId,
+    )
+    if (alreadyOnTask) {
+      return violation('ALREADY_ASSIGNED', '同じタスクに2枠で立つことはできません(1人=1体)。')
+    }
+  }
   if (action.target.kind === 'learning' && player.skills[action.target.skill] >= state.config.skillMax) {
     return violation('SKILL_MAX', `${action.target.skill} はすでに上限レベルです。`)
   }

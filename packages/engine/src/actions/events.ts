@@ -12,6 +12,7 @@ import {
   addFatigueAll,
   getEventCard,
   getLimitEventCard,
+  getTile,
   maybeStartLimitEvent,
   updatePlayer,
 } from '../helpers'
@@ -71,11 +72,24 @@ export function handleResolveEvent(state: GameState): GameState | RuleViolation 
           .map(({ i }) => i)
           .pop()
         if (index !== undefined) {
+          const target = next.deliverables[index]!
+          const sourceTile = getTile(next.content, target.sourceTileId)
           next = {
             ...next,
             deliverables: next.deliverables.map((d, i) =>
               i === index ? { ...d, level: 1 as const } : d,
             ),
+            // 「見えない時限爆弾」防止:どの成果物が劣化したかをログに残す
+            // (フェーズ末の品質判定まで発覚しない事故を防ぐ。設計原則「脅威は可視」)
+            resolutionLog: [
+              ...next.resolutionLog,
+              {
+                tileId: target.sourceTileId,
+                resolved: false,
+                failReason: 'QUALITY_DOWN',
+                message: `⚠ 限界イベント「品質の妥協」:「${sourceTile?.name ?? target.sourceTileId}」の Lv2 成果物が Lv1 に劣化しました(品質判定に影響)。`,
+              },
+            ],
           }
         }
         break
