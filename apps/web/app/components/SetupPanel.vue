@@ -1,85 +1,77 @@
 <script setup lang="ts">
-/** ゲーム開始前の設定パネル(GameConfig 編集はここでのみ可能) */
-import { reactive, ref } from 'vue'
+/** ゲーム開始前の設定パネル(プレイヤー・PM帽子・プロジェクトシート・GameConfig 編集はここでのみ可能) */
+import { computed, reactive, ref } from 'vue'
 import { DEFAULT_CONFIG, DEFAULT_CONTENT } from '@smart-project/engine'
-import type { GameConfig, Role } from '@smart-project/engine'
+import type { GameConfig } from '@smart-project/engine'
 
-const { dispatch } = useGame()
+const { dispatch, projectSheetOf } = useGame()
 
 const seed = ref(Math.floor(Math.random() * 2 ** 31)) // UI 側でシード生成(エンジンには渡すだけ)
-// v2.2 配属トリアージ / v3.0 週次ワーカーコミットは手触り確認のため UI 既定でオン
-// (エンジン既定はどちらもオフ=v2.1・v2.2互換。DEFAULT_CONFIG 自体は変更しない)
-const config = reactive<GameConfig>({
-  ...DEFAULT_CONFIG,
-  mismatchEnabled: true,
-  outsourceEnabled: true,
-  overqualifiedDiscount: 1,
-  workerCommitEnabled: true,
-})
-const clientId = ref<string>('')
-const projectCardId = ref<string>('')
+const config = reactive<GameConfig>({ ...DEFAULT_CONFIG })
 const projectSheetId = ref<string>(DEFAULT_CONTENT.projectSheets[0]!.id)
 
-const players = reactive<Array<{ id: string; name: string; role: Role }>>([
-  { id: 'p1', name: 'プレイヤー1', role: 'pm' },
-  { id: 'p2', name: 'プレイヤー2', role: 'director' },
-  { id: 'p3', name: 'プレイヤー3', role: 'designer' },
-  { id: 'p4', name: 'プレイヤー4', role: 'engineer' },
+interface PlayerRow { id: string; name: string; memberId: string }
+const players = reactive<PlayerRow[]>([
+  { id: 'p1', name: 'プレイヤー1', memberId: '' },
+  { id: 'p2', name: 'プレイヤー2', memberId: '' },
+  { id: 'p3', name: 'プレイヤー3', memberId: '' },
+  { id: 'p4', name: 'プレイヤー4', memberId: '' },
 ])
+const pmPlayerId = ref('p1')
 
+function addPlayer() {
+  if (players.length >= 5) return
+  const n = players.length + 1
+  players.push({ id: `p${n}`, name: `プレイヤー${n}`, memberId: '' })
+}
+function removePlayer() {
+  if (players.length <= 4) return
+  players.pop()
+  if (!players.some((p) => p.id === pmPlayerId.value)) {
+    pmPlayerId.value = players[0]!.id
+  }
+}
+
+/** GameConfig の編集可能フィールド(rules-v4-core.md §6。playerCount は人数から自動算出) */
 const numberFields: Array<{ key: keyof GameConfig; label: string }> = [
-  { key: 'tokensPerPhase', label: 'トークン/フェーズ' },
+  { key: 'phases', label: 'フェーズ数' },
+  { key: 'roundsPerPhase', label: '1フェーズの週数' },
+  { key: 'skillMax', label: 'スキル上限' },
+  { key: 'acceptancePerPhase', label: '検収条件/フェーズ' },
+  { key: 'draftPool', label: '候補プール枚数' },
+  { key: 'commitPenaltyCs', label: '約束未達CS減' },
+  { key: 'finalMissCs', label: '最終検収:未達成CS減' },
+  { key: 'finalCompromiseCs', label: '最終検収:Lv妥協CS減' },
+  { key: 'qualityOvershoot', label: '納品前Lv2積み増し量' },
+  { key: 'upgradeCost', label: '納品後の改修コスト' },
+  { key: 'firePerRound', label: '炎上カード/週' },
+  { key: 'fireOutbreakThreshold', label: '延焼閾値' },
   { key: 'fatigueMax', label: '疲労上限' },
-  { key: 'fatiguePerTask', label: '通常タスク疲労' },
-  { key: 'fatiguePerHeavyTask', label: '重タスク疲労' },
-  { key: 'fatigueLv2TokenPenalty', label: 'Lv2補充ペナルティ' },
-  { key: 'restRecovery', label: '休憩回復量' },
-  { key: 'phaseEndRecovery', label: 'フェーズ末回復量' },
-  { key: 'limitEventResetLevel', label: '限界後の疲労Lv' },
+  { key: 'noOvertimeAtFatigue', label: '残業禁止の疲労値' },
+  { key: 'limitResetFatigue', label: '限界イベント後の疲労' },
+  { key: 'overtimeFatigue', label: '残業の即時疲労' },
+  { key: 'restRecovery', label: '休憩の疲労回復量' },
+  { key: 'phaseEndRecovery', label: 'フェーズ末の疲労回復量' },
+  { key: 'initialCs', label: '初期CS' },
+  { key: 'initialBudget', label: '初期予算' },
   { key: 'extraBillingBudget', label: '追加請求の予算回復' },
   { key: 'extraBillingCsCost', label: '追加請求のCSコスト' },
-  { key: 'tasksPerPhase', label: 'タスク/フェーズ' },
-  { key: 'learningTiles', label: '学習タイル数' },
-  { key: 'skillMax', label: 'スキル上限' },
-]
-
-const fireFields: Array<{ key: keyof GameConfig; label: string }> = [
-  { key: 'firePerPhase', label: '炎上カード/フェーズ' },
-  { key: 'fireOutbreakThreshold', label: '延焼閾値' },
-  { key: 'fireOutbreakCsPenalty', label: '延焼CSペナルティ' },
-  { key: 'extinguishCost', label: '消火コスト' },
-  { key: 'epidemicCount', label: '大炎上カード数' },
-  { key: 'milestoneCount', label: 'マイルストーン数' },
-  { key: 'personalGoalChoices', label: '個人目標の配布枚数' },
-]
-
-const triageFields: Array<{ key: keyof GameConfig; label: string }> = [
-  { key: 'understaffFatigue', label: 'やっつけ追加疲労' },
-  { key: 'understaffCsPenalty', label: 'やっつけCS債務' },
-  { key: 'overqualifiedDiscount', label: '過剰スペック割引' },
-  { key: 'outsourceBudgetCost', label: '外注の予算コスト' },
-  { key: 'outsourceCsCost', label: '外注のCSコスト' },
-  { key: 'outsourcePerPhase', label: '外注上限/フェーズ' },
-]
-
-const workerFields: Array<{ key: keyof GameConfig; label: string }> = [
-  { key: 'roundsPerPhase', label: '1フェーズの週数' },
-  { key: 'firePerRound', label: '炎上カード/週' },
-  { key: 'overtimeFatigue', label: '残業の即時疲労' },
-  { key: 'overtimeMaxPerWeek', label: '残業枠数/週' },
-  { key: 'noOvertimeAtFatigueLv', label: '残業禁止の疲労Lv' },
   { key: 'extraBillingPerPhase', label: '追加請求上限/フェーズ' },
-  { key: 'learnWeeksPerLevel', label: '学習1Lvに必要な週数' },
 ]
+
+const memberOptions = computed(() => DEFAULT_CONTENT.members)
 
 function start() {
   dispatch({
     type: 'SETUP_GAME',
     seed: seed.value,
-    players: players.map((p) => ({ ...p })),
-    config: { ...config },
-    ...(clientId.value ? { clientId: clientId.value } : {}),
-    ...(projectCardId.value ? { projectCardId: projectCardId.value } : {}),
+    players: players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      ...(p.memberId ? { memberId: p.memberId } : {}),
+    })),
+    pmPlayerId: pmPlayerId.value,
+    config: { ...config, playerCount: players.length },
     projectSheetId: projectSheetId.value,
   })
 }
@@ -90,10 +82,20 @@ function start() {
     <h2>ゲーム設定</h2>
     <div class="setup-grid">
       <fieldset>
-        <legend>プレイヤー</legend>
+        <legend>プレイヤー({{ players.length }}人)</legend>
         <div v-for="p in players" :key="p.id" class="row">
           <input v-model="p.name" />
-          <span class="muted">{{ p.role }}</span>
+          <select v-model="p.memberId">
+            <option value="">メンバーカード:ランダム</option>
+            <option v-for="m in memberOptions" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+          <label>
+            <input type="radio" :value="p.id" v-model="pmPlayerId" name="pm" /> PM帽子
+          </label>
+        </div>
+        <div class="row">
+          <button :disabled="players.length >= 5" @click="addPlayer">+ プレイヤー追加(最大5)</button>
+          <button :disabled="players.length <= 4" @click="removePlayer">- 削除(最小4)</button>
         </div>
         <div class="row">
           <label>シード <input v-model.number="seed" type="number" /></label>
@@ -101,105 +103,25 @@ function start() {
       </fieldset>
 
       <fieldset>
-        <legend>シナリオ</legend>
-        <label class="row">クライアント
-          <select v-model="clientId">
-            <option value="">ランダム</option>
-            <option v-for="c in DEFAULT_CONTENT.clients" :key="c.id" :value="c.id">
-              {{ c.name }}(Q{{ c.weights.q }}/C{{ c.weights.c }}/D{{ c.weights.d }})
-            </option>
-          </select>
-        </label>
-        <label class="row">プロジェクト
-          <select v-model="projectCardId">
-            <option value="">ランダム</option>
-            <option v-for="c in DEFAULT_CONTENT.projects" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
-        </label>
-        <label class="row">プロジェクトシート
-          <select v-model="projectSheetId">
-            <option v-for="s in DEFAULT_CONTENT.projectSheets" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select>
-        </label>
+        <legend>プロジェクトシート</legend>
+        <div v-for="s in DEFAULT_CONTENT.projectSheets" :key="s.id" class="row">
+          <label>
+            <input type="radio" :value="s.id" v-model="projectSheetId" name="sheet" />
+            <strong>{{ s.name }}</strong> — CS{{ s.initialCs }} / 予算{{ s.initialBudget }}
+          </label>
+        </div>
+        <p class="muted">{{ projectSheetOf(projectSheetId)?.description }}</p>
       </fieldset>
 
-      <fieldset>
-        <legend>GameConfig(バランス調整)</legend>
+      <fieldset class="wide">
+        <legend>GameConfig(バランス調整。rules-v4-core.md §6)</legend>
         <div class="config-grid">
           <label v-for="f in numberFields" :key="f.key">
             {{ f.label }}
             <input v-model.number="(config[f.key] as number)" type="number" />
           </label>
-          <label>QCD重み方式
-            <select v-model="config.qcdWeightMode">
-              <option value="multiply">multiply(乗算)</option>
-              <option value="add">add(加算)</option>
-            </select>
-          </label>
           <label>CS&lt;0で即敗北
             <input v-model="config.csInstantLose" type="checkbox" />
-          </label>
-          <label>トークン持ち越し
-            <input v-model="config.carryOverTokens" type="checkbox" />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>v2.1 炎上 / EP / マイルストーン</legend>
-        <div class="config-grid">
-          <label>🔥 炎上システム
-            <input v-model="config.fireEnabled" type="checkbox" />
-          </label>
-          <label>🤝 EP
-            <input v-model="config.epEnabled" type="checkbox" />
-          </label>
-          <label>🏅 マイルストーン
-            <input v-model="config.milestonesEnabled" type="checkbox" />
-          </label>
-          <label v-for="f in fireFields" :key="f.key">
-            {{ f.label }}
-            <input v-model.number="(config[f.key] as number)" type="number" />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>v2.2 配属トリアージ(スキルと配属)</legend>
-        <p class="muted hint">
-          スキル未達のタスクを「やっつけ」(成果物ダウン+疲労+CS債務)で解決可能にし、過剰スペックには割引、
-          外注で専門席を金で充足できる。供給&lt;需要の配属トリアージを試す実験機能。
-        </p>
-        <div class="config-grid">
-          <label>🎓 やっつけ解決を許可
-            <input v-model="config.mismatchEnabled" type="checkbox" />
-          </label>
-          <label>📉 やっつけで成果物ダウン
-            <input v-model="config.understaffDowngrade" type="checkbox" />
-          </label>
-          <label>🏷️ 外注を許可
-            <input v-model="config.outsourceEnabled" type="checkbox" />
-          </label>
-          <label v-for="f in triageFields" :key="f.key">
-            {{ f.label }}
-            <input v-model.number="(config[f.key] as number)" type="number" />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>v3.0 週次ワーカーコミット(席モデル)</legend>
-        <p class="muted hint">
-          行動トークンの代わりに「プレイヤー本人」を毎週配属する。1フェーズ = 複数週(朝会→週末解決)。
-          主担当1つ + 任意の残業1枠(疲労が高いと不可)。オンにすると旧来のトークン配置UIは隠れます。
-        </p>
-        <div class="config-grid">
-          <label>👷 週次ワーカーコミット
-            <input v-model="config.workerCommitEnabled" type="checkbox" />
-          </label>
-          <label v-for="f in workerFields" :key="f.key">
-            {{ f.label }}
-            <input v-model.number="(config[f.key] as number)" type="number" />
           </label>
         </div>
       </fieldset>

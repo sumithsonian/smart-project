@@ -1,0 +1,96 @@
+<script setup lang="ts">
+/**
+ * スコープ会議(rules-v4-core.md §1-1):タスク候補プール + WBS配置 + 会議を締める + PM交渉(引き直し)。
+ * 検収条件の約束は AcceptanceBoard(常時表示)側のクリックで行う。
+ */
+import { computed, ref } from 'vue'
+
+const { state, dispatch, taskCard, skillLabels, laneLabels } = useGame()
+
+const pool = computed(() => state.value.taskPool.map((id) => taskCard(id)).filter((c): c is NonNullable<typeof c> => !!c))
+
+const redrawMode = ref(false)
+const redrawSelection = ref<string[]>([])
+const negotiateDone = computed(() => state.value.negotiationUsedPhase === state.value.phase)
+
+function toggleRedrawMode() {
+  redrawMode.value = !redrawMode.value
+  redrawSelection.value = []
+}
+function toggleCard(cardId: string) {
+  if (redrawSelection.value.includes(cardId)) {
+    redrawSelection.value = redrawSelection.value.filter((id) => id !== cardId)
+  } else if (redrawSelection.value.length < 2) {
+    redrawSelection.value = [...redrawSelection.value, cardId]
+  }
+}
+function confirmRedraw() {
+  if (
+    dispatch({
+      type: 'NEGOTIATE',
+      playerId: state.value.pmPlayerId,
+      mode: 'redraw',
+      cardIds: [...redrawSelection.value],
+    })
+  ) {
+    redrawMode.value = false
+    redrawSelection.value = []
+  }
+}
+
+function placeTask(cardId: string) {
+  if (redrawMode.value) {
+    toggleCard(cardId)
+    return
+  }
+  dispatch({ type: 'PLACE_TASK', playerId: state.value.pmPlayerId, cardId })
+}
+
+function finishScope() {
+  dispatch({ type: 'FINISH_SCOPE', playerId: state.value.pmPlayerId })
+}
+</script>
+
+<template>
+  <section class="panel">
+    <h2>スコープ会議 <span class="muted">検収条件の約束 → タスクをWBSに配置 → 会議を締める</span></h2>
+
+    <div class="row">
+      <button :disabled="negotiateDone" @click="toggleRedrawMode">
+        {{ redrawMode ? '引き直しモードを終了' : '🔄 PM交渉:候補の引き直し' }}
+      </button>
+      <template v-if="redrawMode">
+        <span class="muted">引き直す候補を1〜2枚クリックで選択({{ redrawSelection.length }}/2)</span>
+        <button class="primary" :disabled="redrawSelection.length === 0" @click="confirmRedraw">
+          確定して引き直す
+        </button>
+      </template>
+      <span v-if="negotiateDone" class="muted">(交渉はこのフェーズ使用済み)</span>
+    </div>
+
+    <h3>タスク候補プール({{ pool.length }})</h3>
+    <div class="players-grid">
+      <div
+        v-for="c in pool"
+        :key="c.id"
+        class="tile"
+        :class="{ selected: redrawSelection.includes(c.id) }"
+        @click="placeTask(c.id)"
+      >
+        <div class="tile-head"><strong>{{ c.name }}</strong></div>
+        <div class="tile-meta">
+          <span class="badge">{{ laneLabels[c.lane] }}列</span>
+          <span class="badge skill">{{ skillLabels[c.skill].slice(0, 4) }}</span>
+          <span class="badge">工数{{ c.effort }}</span>
+          <span class="badge">上限Lv{{ c.maxLevel }}</span>
+          <span class="badge">😓{{ c.fatigue }}</span>
+          <span class="badge">💰{{ c.cost }}</span>
+        </div>
+      </div>
+      <p v-if="pool.length === 0" class="muted">候補プールが空です。</p>
+    </div>
+    <p class="muted">カードをクリックで WBS レーンに配置(下の「WBSボード」に表示されます)。</p>
+
+    <button class="primary" style="margin-top: 10px" @click="finishScope">会議を締めて第1週へ</button>
+  </section>
+</template>

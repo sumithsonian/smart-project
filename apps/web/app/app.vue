@@ -1,12 +1,12 @@
 <script setup lang="ts">
-/** ホットシートUI:1画面で4人分を操作するデバッグ用UI(ステージ1) */
+/** ホットシートUI:1画面で4〜5人分を操作するデバッグ用UI(ステージ1・エンジンv4) */
 const { state, started, lastViolation } = useGame()
 </script>
 
 <template>
   <div class="app">
     <header>
-      <h1>スマートプロジェクト <span class="muted">ホットシート(ステージ1)</span></h1>
+      <h1>スマートプロジェクト <span class="muted">ホットシート(ステージ1・v4 工数モデル)</span></h1>
     </header>
 
     <div v-if="lastViolation" class="violation">
@@ -17,10 +17,26 @@ const { state, started, lastViolation } = useGame()
 
     <template v-else>
       <MainBoard />
-      <ControlPanel />
-      <TaskArea />
-      <section class="panel">
-        <h2>個人ボード</h2>
+
+      <EventPanel v-if="state.pendingEvent" />
+
+      <template v-else>
+        <ScopeMeetingPanel v-if="state.step === 'scope_meeting'" />
+        <PhaseEndPanel v-else-if="state.step === 'phase_end'" />
+        <ResultPanel v-else-if="state.step === 'finished'" />
+      </template>
+
+      <div class="board-columns">
+        <ProductBoard />
+        <AcceptanceBoard />
+      </div>
+
+      <TaskBoard v-if="state.step !== 'finished'" />
+
+      <PmPanel v-if="!state.pendingEvent && state.step !== 'finished'" />
+
+      <section v-if="state.step !== 'finished'" class="panel">
+        <h2>プレイヤーボード</h2>
         <div class="players-grid">
           <PlayerBoard v-for="p in state.players" :key="p.id" :player="p" />
         </div>
@@ -92,7 +108,7 @@ input[type='number'] { width: 70px; }
 /* セットアップ */
 .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .setup-grid fieldset { border: 1px solid var(--line); border-radius: 10px; }
-.setup-grid fieldset:last-child { grid-column: 1 / -1; }
+.setup-grid fieldset.wide { grid-column: 1 / -1; }
 .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .config-grid label { display: flex; flex-direction: column; font-size: 0.78rem; color: #6b6455; }
 
@@ -115,7 +131,50 @@ input[type='number'] { width: 70px; }
 .board-info { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 0.85rem; }
 .phase-summary { margin-top: 10px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 0.85rem; }
 
-/* タスクエリア:依存レーン */
+/* プロダクトボード・検収条件ボード(2カラム) */
+.board-columns { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; align-items: start; }
+.board-columns .panel { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .board-columns { grid-template-columns: 1fr; }
+}
+
+.slot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.slot-card {
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f6f1e7;
+  cursor: default;
+  position: relative;
+}
+.slot-card.selectable { cursor: pointer; }
+.slot-card.selectable:hover { border-color: var(--accent); }
+.slot-card.selected { outline: 3px solid #facc15; outline-offset: 1px; }
+.slot-card.lv1 { background: #e2e8f0; border-color: #94a3b8; }
+.slot-card.lv2 { background: #fef3c7; border-color: #f59e0b; }
+.slot-card .slot-name { font-weight: 700; font-size: 0.85rem; }
+.slot-card .slot-level { font-size: 0.72rem; color: #6b6455; }
+.slot-card .slot-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+
+.acceptance-list { display: flex; flex-direction: column; gap: 6px; }
+.acceptance-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.acceptance-card.clickable { cursor: pointer; }
+.acceptance-card.clickable:hover { border-color: var(--accent); }
+.acceptance-card.met { background: #f0fdf4; border-color: #86efac; }
+.acceptance-card.committed { background: #fffbeb; border-color: #fde68a; }
+
+/* タスクエリア:WBSレーン */
 .lanes {
   display: flex;
   gap: 14px;
@@ -136,7 +195,7 @@ input[type='number'] { width: 70px; }
   text-transform: uppercase;
 }
 
-/* タイル(エンデバー風に盤面へ置かれたカードのイメージ) */
+/* タイル(盤上に置かれたタスクカードのイメージ) */
 .tile {
   background: var(--paper);
   border: 1px solid #d6cfc0;
@@ -149,45 +208,10 @@ input[type='number'] { width: 70px; }
 }
 .tile:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.32); }
 .tile.selected { outline: 3px solid #facc15; outline-offset: 1px; }
-.tile.resolved { opacity: 0.7; background: #f0fdf4; cursor: default; }
-.tile.resolved:hover { transform: none; }
-.tile.carried { border-style: dashed; border-color: #f59e0b; }
+.tile.not-clickable { cursor: default; }
+.tile.not-clickable:hover { transform: none; box-shadow: 0 3px 6px rgba(0, 0, 0, 0.28); }
 .tile-head { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; font-size: 0.9rem; }
 
-/* ステータス + ツールチップ */
-.tile-status {
-  position: relative;
-  font-size: 0.72rem;
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 2px 8px;
-  white-space: nowrap;
-  cursor: help;
-}
-.tile-status.ok { background: #dcfce7; color: #166534; }
-.tile-status.warn { background: #fee2e2; color: #b91c1c; }
-.tile-status.done { background: #e5e7eb; color: #4b5563; }
-.tile-status .tooltip {
-  display: none;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  width: 240px;
-  background: #1f2937;
-  color: #f9fafb;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 0.78rem;
-  font-weight: normal;
-  white-space: normal;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-}
-.tile-status:hover .tooltip { display: block; }
-.tooltip-line { margin: 2px 0; }
-.tooltip-line.muted-line { color: #9ca3af; border-top: 1px solid #374151; margin-top: 6px; padding-top: 6px; }
-
-/* トークンの充足ピップ */
 .tile-cost-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.75rem; }
 .pip-row { display: inline-flex; gap: 3px; }
 .pip {
@@ -219,52 +243,13 @@ input[type='number'] { width: 70px; }
 }
 .badge.ok { background: #dcfce7; color: #166534; }
 .badge.warn { background: #fef3c7; color: #92400e; }
-.badge.secret { background: #fae8ff; color: #86198f; }
 .badge.skill { background: #e0f2fe; color: #075985; }
-.badge.event { background: #fef9c3; color: #854d0e; }
-.badge.special { background: #ede9fe; color: #5b21b6; }
 .badge.pm { background: #dbeafe; color: #1e40af; }
+.badge.interrupt { background: #fae8ff; color: #86198f; }
 
-.tile-deliverables { display: flex; gap: 4px; align-items: center; margin-top: 6px; }
-.deliverable {
-  font-size: 0.7rem;
-  font-weight: 700;
-  border-radius: 4px;
-  padding: 1px 6px;
-}
+.deliverable { font-size: 0.7rem; font-weight: 700; border-radius: 4px; padding: 1px 6px; }
 .deliverable.lv1 { background: #e2e8f0; color: #334155; }
 .deliverable.lv2 { background: #fbbf24; color: #713f12; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-
-/* v3.0 週次ワーカーコミット:席・応援(タスクエリア) */
-.seat-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-.seat-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  min-width: 46px;
-  border: 1.5px dashed #b9b1a0;
-  border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 0.68rem;
-  background: #fff;
-}
-.seat-chip.filled { border-style: solid; color: #fff; }
-.seat-chip.outsourced { border-style: solid; border-color: #a855f7; background: #fae8ff; color: #86198f; }
-.seat-chip.mismatch { outline: 2px solid #dc2626; outline-offset: 1px; }
-.seat-label { font-weight: 700; }
-.seat-empty { opacity: 0.7; }
-.support-chip {
-  font-size: 0.72rem;
-  background: #fee2e2;
-  color: #b91c1c;
-  border-radius: 999px;
-  padding: 2px 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.support-chip:not(.short) { background: #dcfce7; color: #166534; }
 
 .tile-tokens { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .token-chip {
@@ -275,10 +260,10 @@ input[type='number'] { width: 70px; }
   padding: 2px 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
-.tile-requirement { margin-top: 6px; font-size: 0.76rem; color: #86198f; }
+.token-chip.overtime { outline: 2px dashed rgba(255,255,255,0.7); }
 
 /* 個人ボード */
-.players-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px; }
+.players-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
 .player-board {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -287,64 +272,25 @@ input[type='number'] { width: 70px; }
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
 }
 .player-board.ready { background: #f0fdf4; }
-.player-head { display: flex; gap: 6px; align-items: center; }
+.player-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .player-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.player-stats { display: flex; gap: 12px; margin: 8px 0 4px; font-size: 0.92rem; }
-.player-skills { display: flex; gap: 10px; font-size: 0.8rem; }
-.player-goal { margin: 8px 0; font-size: 0.8rem; padding: 5px 8px; border-radius: 6px; }
-.secret-bg { background: #fdf4ff; border: 1px dashed #e9d5ff; }
+.player-stats { display: flex; gap: 12px; margin: 8px 0 4px; font-size: 0.92rem; flex-wrap: wrap; }
+.player-skills { display: flex; gap: 10px; font-size: 0.8rem; flex-wrap: wrap; }
+.fatigue-gauge { display: inline-flex; gap: 2px; vertical-align: middle; }
+.fatigue-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #cbd5e1; background: #fff; }
+.fatigue-dot.filled { background: #dc2626; border-color: #b91c1c; }
+.member-flavor { font-size: 0.76rem; color: #8b8577; margin: 2px 0 6px; }
 .player-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .learn-group { display: inline-flex; gap: 2px; }
 
-/* v3.0 週次ワーカーコミット:配属UI(個人ボード) */
 .worker-actions { flex-direction: column; align-items: stretch; gap: 6px; }
 .assign-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .assign-label { font-size: 0.78rem; font-weight: 700; color: #6b6455; min-width: 44px; }
 
-/* マイルストーン */
-.milestone-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.milestone-chip {
-  background: #fefce8;
-  border: 1px solid #fde047;
-  border-radius: 999px;
-  padding: 3px 12px;
-  font-size: 0.8rem;
-  cursor: help;
-}
-.milestone-chip.claimed { background: #fef08a; border-color: #eab308; }
-.player-milestones { margin: 4px 0; }
-.badge.milestone { background: #fef08a; color: #713f12; }
-
 /* 進行 */
 .event-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px; }
 .fire-box { background: #fef2f2; border-color: #fca5a5; }
-.fire-log {
-  margin-top: 10px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  padding: 8px 12px;
-}
-.fire-log ul { margin: 4px 0; padding-left: 18px; font-size: 0.82rem; }
-.requirement-choices { display: flex; gap: 8px; }
-.requirement-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  text-align: left;
-  border: 2px solid #e9d5ff;
-  background: #fdf4ff;
-  border-radius: 10px;
-}
-.requirement-card:hover { border-color: #a855f7; transform: translateY(-1px); }
-.order-builder { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
-.order-builder .selected { border-color: var(--accent); background: #ecfdf5; font-weight: 600; }
-.queue { margin: 4px 0; padding-left: 20px; font-size: 0.85rem; }
-.resolution-log ul { margin: 4px 0; padding-left: 18px; font-size: 0.82rem; }
-.ok-text { color: #166534; }
-.danger-text { color: #b91c1c; }
+.settlement-log ul { margin: 4px 0; padding-left: 18px; font-size: 0.85rem; }
 .result-box { padding: 14px; border-radius: 10px; }
 .result-box.win { background: #f0fdf4; border: 1px solid #86efac; }
 .result-box.lose { background: #fef2f2; border: 1px solid #fecaca; }
@@ -362,12 +308,18 @@ input[type='number'] { width: 70px; }
   margin-bottom: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
-.action-log {
-  max-height: 200px;
+.game-log {
+  max-height: 260px;
   overflow-y: auto;
-  font-size: 0.8rem;
-  color: #6b6455;
+  font-size: 0.82rem;
+  color: #3f3a2e;
   margin: 8px 0 0;
-  padding-left: 24px;
+  padding-left: 0;
+  list-style: none;
 }
+.game-log li {
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.game-log li .log-tag { color: #8b8577; font-size: 0.72rem; margin-right: 6px; }
 </style>

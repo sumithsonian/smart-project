@@ -1,50 +1,9 @@
 <script setup lang="ts">
-/** アクションログ:全履歴表示・undo・JSONエクスポート(バランス分析の入口) */
+/** 進行ログ(state.log。全履歴・最新が上)+ undo・リセット・アクションJSONエクスポート */
 import { ref } from 'vue'
-import type { GameAction } from '@smart-project/engine'
 
-const { actions, state, undo, reset, exportLogJson, targetLabel } = useGame()
+const { actions, state, undo, reset, exportLogJson } = useGame()
 const copied = ref(false)
-
-function describe(action: GameAction): string {
-  const name = (id: string) => state.value.players.find((p) => p.id === id)?.name ?? id
-  switch (action.type) {
-    case 'ASSIGN_WORKER':
-      return `${name(action.playerId)}: 配属${action.overtime ? '(残業)' : ''} → ${targetLabel(action.target)}`
-    case 'UNASSIGN_WORKER':
-      return `${name(action.playerId)}: 配属取消${action.overtime ? '(残業)' : ''}`
-    case 'SETUP_GAME':
-      return `セットアップ(seed=${action.seed})`
-    case 'PLACE_TOKEN':
-      return `${name(action.playerId)}: 配置 → ${action.target.kind === 'task' ? action.target.taskTileId : `学習(${action.target.skill})`}`
-    case 'RETRIEVE_TOKEN':
-      return `${name(action.playerId)}: 回収 ← ${action.target.kind === 'task' ? action.target.taskTileId : `学習(${action.target.skill})`}`
-    case 'REST':
-      return `${name(action.playerId)}: 休憩`
-    case 'EXTRA_BILLING':
-      return `${name(action.playerId)}: 追加請求`
-    case 'DECLARE_READY':
-      return `${name(action.playerId)}: 準備完了`
-    case 'DECLARE_TASK_ORDER':
-      return `${name(action.playerId)}: 処理順宣言 [${action.order.join(' → ')}]`
-    case 'RESOLVE_NEXT_TASK':
-      return '次のタスクを解決'
-    case 'SELECT_REQUIREMENT_CARD':
-      return `要件カード選択(${action.choiceIndex + 1}枚目)`
-    case 'RESOLVE_EVENT':
-      return 'イベント解決'
-    case 'ADVANCE_PHASE':
-      return 'フェーズ進行'
-    case 'SELECT_PERSONAL_GOAL':
-      return `${name(action.playerId)}: 個人目標を選択`
-    case 'EXTINGUISH_FIRE':
-      return `${name(action.playerId)}: 🧯消火 → ${action.taskTileId}`
-    case 'SELECT_EPIDEMIC_TARGET':
-      return `${name(action.playerId)}: 🌋大炎上ターゲット → ${action.taskTileId}`
-    case 'OUTSOURCE_TASK':
-      return `${name(action.playerId)}: 🏷️外注 → ${action.taskTileId}`
-  }
-}
 
 async function copyJson() {
   await navigator.clipboard.writeText(exportLogJson())
@@ -65,7 +24,7 @@ function downloadJson() {
 
 <template>
   <section class="panel">
-    <h2>アクションログ({{ actions.length }})</h2>
+    <h2>進行ログ <span class="muted">(アクション {{ actions.length }} 件)</span></h2>
     <div class="row">
       <button :disabled="actions.length === 0" @click="undo">↩ Undo</button>
       <button :disabled="actions.length === 0" @click="copyJson">
@@ -74,9 +33,9 @@ function downloadJson() {
       <button :disabled="actions.length === 0" @click="downloadJson">JSON ダウンロード</button>
       <button class="danger" @click="reset">リセット</button>
     </div>
-    <ol class="action-log">
-      <li v-for="(a, i) in [...actions].reverse()" :key="actions.length - i">
-        {{ describe(a) }}
+    <ol class="game-log">
+      <li v-for="(e, i) in [...state.log].reverse()" :key="state.log.length - i">
+        <span class="log-tag">P{{ e.phase }}/W{{ e.week }}</span>{{ e.message }}
       </li>
     </ol>
   </section>
