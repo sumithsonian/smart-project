@@ -25,15 +25,27 @@ import { maybeStartLimitEvent } from './events'
 import { startWeek, taskLabel } from './week'
 import { processPhaseEnd } from './phaseEnd'
 
-/** プレイヤーがこの配属で積むキューブ数(差し込みは最高スキル=総合対応力) */
-function cubesFor(state: GameState, playerId: string, targetSkillOf: () => string | null): number {
+/**
+ * プレイヤーがこの配属で積むキューブ数(差し込みは最高スキル=総合対応力)。
+ * 「段取り」ボーナス(+1)は週に1回だけ(最初の着席にのみ乗る。残業併用でも+1)。
+ */
+function cubesFor(
+  state: GameState,
+  playerId: string,
+  targetSkillOf: () => string | null,
+  expediteConsumed: Set<string>,
+): number {
   const player = getPlayer(state, playerId)!
   const skillKey = targetSkillOf()
   const base =
     skillKey === null
       ? Math.max(player.skills.direction, player.skills.design, player.skills.engineering)
       : player.skills[skillKey as keyof typeof player.skills]
-  const expedite = state.expeditedPlayerIds.includes(playerId) ? 1 : 0
+  let expedite = 0
+  if (state.expeditedPlayerIds.includes(playerId) && !expediteConsumed.has(playerId)) {
+    expedite = 1
+    expediteConsumed.add(playerId)
+  }
   return base + expedite
 }
 
@@ -81,13 +93,14 @@ export function processWeekend(state: GameState): GameState {
     }
   }
   // ── 5. キューブを積む(タスク/スロット)──
+  const expediteConsumed = new Set<string>()
   for (const a of next.assignments) {
     if (a.target.kind === 'task') {
       const cardId = a.target.cardId
       const task = getBoardTask(next, cardId)
       if (!task) continue
       const card = getTaskCard(next.content, cardId)
-      const cubes = cubesFor(next, a.playerId, () => (task.interrupt ? null : card!.skill))
+      const cubes = cubesFor(next, a.playerId, () => (task.interrupt ? null : card!.skill), expediteConsumed)
       next = updateBoardTask(next, cardId, (t) => ({
         ...t,
         cubes: t.cubes + cubes,
@@ -98,7 +111,7 @@ export function processWeekend(state: GameState): GameState {
     } else if (a.target.kind === 'slot') {
       const slotId = a.target.slotId
       const def = getSlotDef(next.content, slotId)!
-      const cubes = cubesFor(next, a.playerId, () => def.skill)
+      const cubes = cubesFor(next, a.playerId, () => def.skill, expediteConsumed)
       const slot = getSlotState(next, slotId)!
       // 手戻りキューブの解消が先。余りは改修(Lv1のみ)に積む
       const toRework = Math.min(slot.reworkCubes, cubes)
