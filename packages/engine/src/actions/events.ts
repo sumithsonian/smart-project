@@ -1,51 +1,55 @@
 /**
- * RESOLVE_EVENT — 解決待ちイベント(フェーズ開始/タスク/限界)の解決
+ * イベント解決(週初トラブル・限界イベント)(rules-v4-core.md §1-2-1)
  */
 import type { GameState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
-import { discard } from '../deck'
+import { drawCard, discard } from '../deck'
+import { nextInt } from '../rng'
 import {
-  applyEventEffects,
+  addFatigueAll,
+  addLog,
   changeBudget,
   changeCs,
-  addFatigueAll,
-  getEventCard,
-  getLimitEventCard,
-  getTile,
-  maybeStartLimitEvent,
+  getSlotDef,
+  recheckMetAcceptance,
   updatePlayer,
+  updateSlot,
 } from '../helpers'
-import { maybeFinishExecution } from './execution'
 
-/** フェーズ開始時の行動トークン補充(RULES.md §2-1。疲労Lv2は -1、限界イベントのペナルティも適用) */
-function replenishTokens(state: GameState): GameState {
+/**
+ * 限界イベント処理待ちがあれば、次の1件のカードを引いて pendingEvent にセットする。
+ */
+export function maybeStartLimitEvent(state: GameState): GameState {
+  if (state.pendingEvent !== null || state.result !== null) return state
+  const [targetPlayerId, ...rest] = state.pendingLimitPlayerIds
+  if (targetPlayerId === undefined) return state
+  const { cardId, deck, rng } = drawCard(state.decks.limitEvents, state.rng)
+  if (cardId === null) return state
   return {
     ...state,
-    players: state.players.map((p) => {
-      const lv2Penalty = p.fatigue >= 2 ? state.config.fatigueLv2TokenPenalty : 0
-      const gained = Math.max(0, state.config.tokensPerPhase - lv2Penalty - p.nextPhaseTokenPenalty)
-      return { ...p, tokens: p.tokens + gained, nextPhaseTokenPenalty: 0 }
-    }),
+    decks: { ...state.decks, limitEvents: deck },
+    rng,
+    pendingLimitPlayerIds: rest,
+    pendingEvent: { kind: 'limit', cardId, targetPlayerId },
   }
 }
 
+/** RESOLVE_EVENT — 解決待ちイベントを解決する */
 export function handleResolveEvent(state: GameState): GameState | RuleViolation {
-  if (state.result !== null) {
-    return violation('GAME_FINISHED', 'ゲームはすでに終了しています。')
-  }
   const pending = state.pendingEvent
   if (pending === null) {
     return violation('NO_PENDING_EVENT', '解決待ちのイベントはありません。')
   }
-
   let next: GameState = { ...state, pendingEvent: null }
 
   if (pending.kind === 'limit') {
-    // ── 限界イベント(RULES.md §4):効果を適用後、対象プレイヤーは Lv2 に戻る ──
-    const card = getLimitEventCard(state, pending.cardId)
-    if (!card) return violation('NO_PENDING_EVENT', `限界イベントカードが見つかりません: ${pending.cardId}`)
+    // ── 限界イベント:効果を適用し、対象プレイヤーは疲労 limitResetFatigue に戻る ──
+    const card = next.content.limitEvents.find((c) => c.id === pending.cardId)
+    if (!card) return violation('NO_PENDING_EVENT', `限界イベントが見つかりません: ${pending.cardId}`)
     const targetId = pending.targetPlayerId!
+    const targetName = next.players.find((p) => p.id === targetId)?.name ?? targetId
+    next = addLog(next, `😵 限界イベント「${card.name}」(${targetName})`)
     switch (card.effect.type) {
       case 'BUDGET':
         next = changeBudget(next, card.effect.amount)
@@ -56,78 +60,96 @@ export function handleResolveEvent(state: GameState): GameState | RuleViolation 
       case 'FATIGUE_ALL':
         next = addFatigueAll(next, card.effect.amount)
         break
-      case 'TOKEN_PENALTY_NEXT': {
-        const amount = card.effect.amount
-        next = updatePlayer(next, targetId, (p) => ({
-          ...p,
-          nextPhaseTokenPenalty: p.nextPhaseTokenPenalty + amount,
-        }))
+      case 'OVERTIME_BAN':
+        next = updatePlayer(next, targetId, (p) => ({ ...p, overtimeBanPhase: next.phase + 1 }))
         break
-      }
-      case 'QUALITY_DOWN': {
-        // チームの Lv2 成果物を1つ Lv1 に劣化(獲得が新しいものから)
-        const index = [...next.deliverables]
-          .map((d, i) => ({ d, i }))
-          .filter(({ d }) => d.level === 2)
-          .map(({ i }) => i)
-          .pop()
-        if (index !== undefined) {
-          const target = next.deliverables[index]!
-          const sourceTile = getTile(next.content, target.sourceTileId)
-          next = {
-            ...next,
-            deliverables: next.deliverables.map((d, i) =>
-              i === index ? { ...d, level: 1 as const } : d,
-            ),
-            // 「見えない時限爆弾」防止:どの成果物が劣化したかをログに残す
-            // (フェーズ末の品質判定まで発覚しない事故を防ぐ。設計原則「脅威は可視」)
-            resolutionLog: [
-              ...next.resolutionLog,
-              {
-                tileId: target.sourceTileId,
-                resolved: false,
-                failReason: 'QUALITY_DOWN',
-                message: `⚠ 限界イベント「品質の妥協」:「${sourceTile?.name ?? target.sourceTileId}」の Lv2 成果物が Lv1 に劣化しました(品質判定に影響)。`,
-              },
-            ],
-          }
-        }
-        break
-      }
       case 'NONE':
         break
     }
     if (next.result !== null) return next
-    // 対象プレイヤーの疲労を Lv2(limitEventResetLevel)に戻し、二重処理を防ぐ
     next = updatePlayer(next, targetId, (p) => ({
       ...p,
-      fatigue: Math.min(p.fatigue, next.config.limitEventResetLevel),
+      fatigue: Math.min(p.fatigue, next.config.limitResetFatigue),
     }))
     next = {
       ...next,
-      pendingLimitPlayerIds: next.pendingLimitPlayerIds.filter((id) => id !== targetId),
       decks: { ...next.decks, limitEvents: discard(next.decks.limitEvents, pending.cardId) },
     }
   } else {
-    // ── 通常イベント(フェーズ開始 / タスクのイベントマーク) ──
-    const card = getEventCard(state, pending.cardId)
-    if (!card) return violation('NO_PENDING_EVENT', `イベントカードが見つかりません: ${pending.cardId}`)
-    next = applyEventEffects(next, card.effects)
-    if (next.result !== null) return next
-    next = {
-      ...next,
-      decks: { ...next.decks, events: discard(next.decks.events, pending.cardId) },
+    // ── 週初イベント ──
+    const card = next.content.events.find((c) => c.id === pending.cardId)
+    if (!card) return violation('NO_PENDING_EVENT', `イベントが見つかりません: ${pending.cardId}`)
+    next = addLog(next, `⚡ イベント「${card.name}」:${card.description}`)
+    for (const effect of card.effects) {
+      if (next.result !== null) return next
+      switch (effect.type) {
+        case 'BUDGET':
+          next = changeBudget(next, effect.amount)
+          break
+        case 'CS':
+          next = changeCs(next, effect.amount)
+          break
+        case 'FATIGUE_ALL':
+          next = addFatigueAll(next, effect.amount)
+          break
+        case 'INTERRUPT':
+          next = applyInterrupt(next, effect.kind, effect.amount, effect.rewardBudget ?? 0)
+          break
+        case 'NONE':
+          break
+      }
     }
-    // フェーズ開始イベントなら、解決後にトークン補充(§2-1 の順序)
-    if (pending.kind === 'phase_start' && next.replenishAfterEvent) {
-      next = replenishTokens(next)
-      next = { ...next, replenishAfterEvent: false }
-    }
+    next = { ...next, decks: { ...next.decks, events: discard(next.decks.events, pending.cardId) } }
   }
 
-  // 疲労 Lv3 到達者がいれば次の限界イベントを開始する
-  next = maybeStartLimitEvent(next)
   if (next.result !== null) return next
-  // 実行ステップ中なら、解決待ちがなくなった時点でフェーズ終了処理へ進む
-  return maybeFinishExecution(next)
+  return maybeStartLimitEvent(next)
+}
+
+/** 差し込みの適用(rework: 納品済みスロットへ / bug・consult: 割り込みレーンにタスク) */
+function applyInterrupt(
+  state: GameState,
+  kind: 'rework' | 'bug' | 'consult',
+  amount: number,
+  rewardBudget: number,
+): GameState {
+  if (kind === 'rework') {
+    const delivered = state.slots.filter((s) => s.level > 0)
+    if (delivered.length === 0) {
+      return addLog(state, '💨 手戻り発生…のはずが、まだ何も納品していなかった(効果なし)')
+    }
+    const [index, rng] = nextInt(state.rng, delivered.length)
+    const slot = delivered[index]!
+    let next: GameState = { ...state, rng }
+    next = updateSlot(next, slot.slotId, (s) => ({ ...s, reworkCubes: s.reworkCubes + amount }))
+    const name = getSlotDef(next.content, slot.slotId)?.name ?? slot.slotId
+    next = addLog(next, `🔁 手戻り!【${name}】に手戻りキューブ${amount}個(解消まで検収上は未達)`)
+    return recheckMetAcceptance(next)
+  }
+  const cardId = `interrupt-${state.placementCounter + 1}`
+  const next: GameState = {
+    ...state,
+    board: [
+      ...state.board,
+      {
+        cardId,
+        cubes: 0,
+        fire: 0,
+        lane: 'interrupt',
+        interrupt: kind,
+        interruptEffort: amount,
+        rewardBudget: kind === 'consult' ? rewardBudget : null,
+        contributorIds: [],
+        placedSeq: state.placementCounter + 1,
+        effortReduction: 0,
+      },
+    ],
+    placementCounter: state.placementCounter + 1,
+  }
+  return addLog(
+    next,
+    kind === 'bug'
+      ? `🐛 バグ報告!対応タスク(工数${amount})が割り込み。放置するとフェーズ末ごとに CS-1`
+      : `💬 相談ごと(工数${amount})。対応すれば予算+${rewardBudget}。放置しても罰はない`,
+  )
 }

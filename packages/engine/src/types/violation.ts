@@ -11,76 +11,40 @@ export type RuleViolationCode =
   | 'GAME_FINISHED'
   /** プレイヤーが見つからない */
   | 'PLAYER_NOT_FOUND'
-  /** 行動トークンが足りない */
-  | 'NOT_ENOUGH_TOKENS'
-  /** 対象のタスクが見つからない */
-  | 'TASK_NOT_FOUND'
-  /** 解決済みタスクへの操作 */
-  | 'TASK_ALREADY_RESOLVED'
-  /** 回収できるトークンがない */
-  | 'NO_TOKEN_TO_RETRIEVE'
-  /** すでに Ready 宣言済み */
-  | 'ALREADY_READY'
-  /** PM 以外によるタスク順宣言 */
+  /** PM 帽子の権限が必要 */
   | 'NOT_PM'
-  /** タスク処理順が不正(依存順違反・過不足) */
-  | 'INVALID_TASK_ORDER'
-  /** タスク処理順が未宣言 */
-  | 'ORDER_NOT_DECLARED'
-  /** 解決待ちイベントがある(先に RESOLVE_EVENT が必要) */
+  /** セットアップ内容が不正 */
+  | 'INVALID_SETUP'
+  /** 解決待ちイベントがある(先に RESOLVE_EVENT) */
   | 'PENDING_EVENT'
   /** 解決待ちイベントがない */
   | 'NO_PENDING_EVENT'
-  /** 要件カードの選択待ちがある(先に SELECT_REQUIREMENT_CARD が必要) */
-  | 'PENDING_REQUIREMENT'
-  /** 要件カードの選択待ちがない */
-  | 'NO_PENDING_REQUIREMENT'
-  /** 解決すべきタスクが残っていない */
-  | 'NO_MORE_TASKS'
-  /** フェーズ終了処理が完了していない */
-  | 'PHASE_NOT_ENDED'
-  /** セットアップ内容が不正(人数・ロール構成・ID 不一致) */
-  | 'INVALID_SETUP'
-  /** スキル上限のため学習できない */
-  | 'SKILL_MAX'
-  /** 個人目標は選択済み */
-  | 'GOAL_ALREADY_SELECTED'
-  /** 個人目標の選択が不正(選択肢の範囲外など) */
-  | 'INVALID_GOAL_CHOICE'
-  /** 全員の個人目標選択が終わっていない */
-  | 'GOAL_SELECTION_PENDING'
-  /** 対象タスクに🔥がない */
-  | 'NO_FIRE'
-  /** 大炎上のターゲット選択待ちがない */
-  | 'NO_PENDING_EPIDEMIC'
-  /** 炎上フェーズの処理中(大炎上ターゲットの選択待ちなど) */
-  | 'FIRE_PHASE_ACTIVE'
-  /** スキル条件を満たす参加者がいない(v2.2:mismatchEnabled=false 時) */
-  | 'SKILL_NOT_MET'
-  /** 実行コストに対して予算が不足(v2.2 外注など) */
-  | 'BUDGET_SHORT'
-  /** 外注が無効(outsourceEnabled=false) */
-  | 'OUTSOURCE_DISABLED'
-  /** すでに外注済みのタスク */
-  | 'ALREADY_OUTSOURCED'
-  /** 外注できる専門席がない(スキル条件・秘匿要件なし) */
-  | 'NO_SKILL_SEAT'
-  /** フェーズの外注上限に達した */
-  | 'OUTSOURCE_LIMIT'
-  /** ワーカーモードでは使えない操作(v3.0) */
-  | 'WORKER_MODE'
-  /** すでに配属済み(v3.0) */
+  /** 対象カード・タスク・スロットが見つからない */
+  | 'NOT_FOUND'
+  /** 検収条件はすでに約束済み/達成済み */
+  | 'ALREADY_COMMITTED'
+  /** レーン文法違反(直前の列にタスクがない) */
+  | 'LANE_GRAMMAR'
+  /** すでに配属済み */
   | 'ALREADY_ASSIGNED'
-  /** 取り消せる配属がない(v3.0) */
+  /** 取り消せる配属がない */
   | 'NO_ASSIGNMENT'
-  /** 席が見つからない・埋まっている(v3.0) */
-  | 'SEAT_UNAVAILABLE'
-  /** 応援の需要(🔥)がない(v3.0) */
-  | 'NO_SUPPORT_DEMAND'
-  /** 残業できない(上限・疲労・寝込み)(v3.0) */
+  /** スキル0の系統には座れない */
+  | 'SKILL_ZERO'
+  /** 残業できない(上限・疲労・禁止・対象) */
   | 'OVERTIME_FORBIDDEN'
-  /** 追加請求のフェーズ上限に達した(v3.0) */
-  | 'EXTRA_BILLING_LIMIT'
+  /** すでに Ready 宣言済み */
+  | 'ALREADY_READY'
+  /** 納品できない(工数不足・予算不足・対象不正) */
+  | 'CANNOT_DELIVER'
+  /** 交渉・追加請求・能力のフェーズ回数上限 */
+  | 'LIMIT_REACHED'
+  /** 対象が不正(能力・交渉の引数など) */
+  | 'INVALID_TARGET'
+  /** 消火する🔥がない */
+  | 'NO_FIRE'
+  /** スキル上限 */
+  | 'SKILL_MAX'
 
 /** ルール違反(applyAction が GameState の代わりに返す) */
 export interface RuleViolation {

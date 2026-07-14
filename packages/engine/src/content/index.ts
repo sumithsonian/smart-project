@@ -1,43 +1,23 @@
 /**
- * プレイテスト用コンテンツ一式
+ * プレイテスト用コンテンツ一式(v4)
  */
 import type { GameContent } from '../types/content'
+import { SLOTS } from './slots'
 import { TASKS } from './tasks'
-import {
-  CLIENTS,
-  EVENTS,
-  LIMIT_EVENTS,
-  MILESTONES,
-  PERSONAL_GOALS,
-  PROJECTS,
-  PROJECT_SHEETS,
-  REQUIREMENTS,
-  ROLES,
-} from './cards'
+import { ACCEPTANCE, EVENTS, FIRES, LIMIT_EVENTS, MEMBERS, PROJECT_SHEETS } from './cards'
 
+export { SLOTS } from './slots'
 export { TASKS } from './tasks'
-export {
-  CLIENTS,
-  EVENTS,
-  LIMIT_EVENTS,
-  MILESTONES,
-  PERSONAL_GOALS,
-  PROJECTS,
-  PROJECT_SHEETS,
-  REQUIREMENTS,
-  ROLES,
-} from './cards'
+export { ACCEPTANCE, EVENTS, FIRES, LIMIT_EVENTS, MEMBERS, PROJECT_SHEETS } from './cards'
 
 /** デフォルトのコンテンツバンドル(SETUP_GAME 時に state へ取り込まれる) */
 export const DEFAULT_CONTENT: GameContent = {
+  slots: SLOTS,
   tasks: TASKS,
+  acceptance: ACCEPTANCE,
   events: EVENTS,
-  requirements: REQUIREMENTS,
+  fires: FIRES,
   limitEvents: LIMIT_EVENTS,
-  personalGoals: PERSONAL_GOALS,
-  milestones: MILESTONES,
-  clients: CLIENTS,
-  projects: PROJECTS,
+  members: MEMBERS,
   projectSheets: PROJECT_SHEETS,
-  roles: ROLES,
 }

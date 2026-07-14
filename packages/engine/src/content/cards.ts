@@ -1,50 +1,88 @@
 /**
- * プレイテスト用の仮カードデータ
- * イベント10枚 / 要件カード8枚 / 限界イベント6枚+「何も起きない」1枚 / 個人目標4枚
+ * コンテンツカード一式(v4)
+ * ACCEPTANCE 8枚 / EVENTS 14枚 / FIRES 9枚 / LIMIT_EVENTS 7枚 / MEMBERS 6枚 / PROJECT_SHEETS 2枚
  */
 import type {
-  ClientCard,
+  AcceptanceCard,
   EventCard,
+  FireCard,
   LimitEventCard,
-  MilestoneCard,
-  PersonalGoalCard,
-  ProjectCard,
+  MemberCard,
   ProjectSheet,
-  RequirementCard,
-  RoleDef,
 } from '../types/content'
 
-/** イベントカード(10枚) */
+/** 検収条件カード(8枚: フェーズ1〜4に各2枚) */
+export const ACCEPTANCE: AcceptanceCard[] = [
+  // フェーズ1
+  {
+    id: 'ac-p1-reqs',
+    name: '要件定義書を完成させたい',
+    phase: 1,
+    slot: 'requirements',
+    level: 1,
+  },
+  {
+    id: 'ac-p1-map',
+    name: 'サイト構成は詳しく設計してほしい',
+    phase: 1,
+    slot: 'sitemap',
+    level: 2,
+  },
+  // フェーズ2
+  {
+    id: 'ac-p2-wire',
+    name: 'ワイヤーフレームで動きを見たい',
+    phase: 2,
+    slot: 'wireframe',
+    level: 1,
+  },
+  {
+    id: 'ac-p2-design',
+    name: 'デザインカンプは磨き込みたい',
+    phase: 2,
+    slot: 'design-comp',
+    level: 2,
+  },
+  // フェーズ3
+  {
+    id: 'ac-p3-top',
+    name: 'トップページは完成度を求めます',
+    phase: 3,
+    slot: 'top-page',
+    level: 2,
+  },
+  {
+    id: 'ac-p3-cms',
+    name: 'CMS は必ず導入してください',
+    phase: 3,
+    slot: 'cms',
+    level: 1,
+  },
+  // フェーズ4
+  {
+    id: 'ac-p4-launch',
+    name: '指定日に確実に公開してほしい',
+    phase: 4,
+    slot: 'launch',
+    level: 1,
+  },
+  {
+    id: 'ac-p4-all',
+    name: '全ページの品質は妥協しない',
+    phase: 4,
+    slot: 'sub-pages',
+    level: 2,
+  },
+]
+
+/** イベントカード(14枚: 通常系9枚 + 差し込み系5枚) */
 export const EVENTS: EventCard[] = [
+  // ─── 通常系(予算・CS・疲労) ───
   {
     id: 'ev-scope-change',
     name: '要件変更',
     description: '「やっぱりこの機能も欲しいんですけど」',
     effects: [{ type: 'BUDGET', amount: -2 }],
-  },
-  {
-    id: 'ev-extra-feature',
-    name: '追加機能要望',
-    description: '対応すれば喜ばれるが、現場は疲弊する。',
-    effects: [
-      { type: 'CS', amount: 1 },
-      { type: 'FATIGUE_ALL', amount: 1 },
-    ],
-  },
-  {
-    id: 'ev-deadline-pull',
-    name: '納期前倒し',
-    description: '「展示会に間に合わせたいんです」',
-    effects: [{ type: 'FATIGUE_ALL', amount: 1 }],
-  },
-  {
-    id: 'ev-bug-report',
-    name: 'バグ報告',
-    description: '本番にだけ出る。なぜか本番にだけ。',
-    effects: [
-      { type: 'CS', amount: -1 },
-      { type: 'BUDGET', amount: -1 },
-    ],
   },
   {
     id: 'ev-extra-budget',
@@ -53,132 +91,173 @@ export const EVENTS: EventCard[] = [
     effects: [{ type: 'BUDGET', amount: 3 }],
   },
   {
+    id: 'ev-budget-tight',
+    name: 'コスト見直し',
+    description: '予算が圧迫されてきた。',
+    effects: [{ type: 'BUDGET', amount: -1 }],
+  },
+  {
     id: 'ev-praise',
     name: '社長が褒めてた',
     description: '先方の社長がデザインを気に入ったらしい。',
     effects: [{ type: 'CS', amount: 1 }],
   },
   {
-    id: 'ev-contact-change',
-    name: '担当者交代',
-    description: '引き継ぎゼロで担当者が変わった。説明やり直し。',
-    effects: [
-      { type: 'CS', amount: -1 },
-      { type: 'FATIGUE_ALL', amount: 1 },
-    ],
+    id: 'ev-complaint',
+    name: '進捗クレーム',
+    description: '「思ったより時間がかかってますね」',
+    effects: [{ type: 'CS', amount: -1 }],
   },
   {
-    id: 'ev-server-down',
-    name: '検証サーバーダウン',
-    description: '復旧作業に半日溶けた。',
-    effects: [{ type: 'BUDGET', amount: -1 }],
+    id: 'ev-fatigue-week',
+    name: 'バタバタの一週間',
+    description: 'あれやこれやで疲弊した。',
+    effects: [{ type: 'FATIGUE_ALL', amount: 1 }],
   },
   {
-    id: 'ev-smooth-week',
+    id: 'ev-rest-day',
     name: '平和な一週間',
     description: '何も起きない週もある。',
     effects: [{ type: 'NONE' }],
   },
   {
-    id: 'ev-reference-hit',
-    name: '参考サイトが刺さった',
-    description: '「こういうのが欲しかったんです!」方向性が固まった。',
+    id: 'ev-smooth',
+    name: '打ち合わせスムーズ',
+    description: '先方の反応が早く、判断も早い。',
     effects: [
-      { type: 'CS', amount: 1 },
       { type: 'BUDGET', amount: 1 },
+      { type: 'CS', amount: 1 },
     ],
   },
-]
-
-/** 要件カード(8枚) */
-export const REQUIREMENTS: RequirementCard[] = [
   {
-    id: 'rq-spa',
-    name: '実は SPA 要件だった',
-    description: '途中から「アプリみたいにしたい」と言われた。',
-    effect: { type: 'EXTRA_SKILL', requirement: { skill: 'engineering', level: 2 } },
+    id: 'ev-combined',
+    name: 'トラブル祭り',
+    description: '何もかもが重なった。',
+    effects: [
+      { type: 'BUDGET', amount: -1 },
+      { type: 'CS', amount: -1 },
+      { type: 'FATIGUE_ALL', amount: 1 },
+    ],
+  },
+  // ─── 差し込み系(INTERRUPT) ───
+  {
+    id: 'ev-rework-1',
+    name: 'デザイン手戻り',
+    description: '「色が違う気がする」',
+    effects: [{ type: 'INTERRUPT', kind: 'rework', amount: 2 }],
   },
   {
-    id: 'rq-kerning',
-    name: '字詰めへの強いこだわり',
-    description: '1px 単位の調整指示が届く。',
-    effect: { type: 'EXTRA_SKILL', requirement: { skill: 'design', level: 2 } },
+    id: 'ev-rework-2',
+    name: 'コンテンツ修正',
+    description: 'テキスト修正指示がどんどん来た。',
+    effects: [{ type: 'INTERRUPT', kind: 'rework', amount: 2 }],
   },
   {
-    id: 'rq-approval',
-    name: '上長承認が必要',
-    description: '決裁フローが3段階あることが判明。',
-    effect: { type: 'EXTRA_SKILL', requirement: { skill: 'direction', level: 2 } },
+    id: 'ev-bug-1',
+    name: 'バグ報告',
+    description: '本番にだけ出るバグ。何で?',
+    effects: [{ type: 'INTERRUPT', kind: 'bug', amount: 2 }],
   },
   {
-    id: 'rq-license',
-    name: '有料ライセンスが必要',
-    description: 'フォントとプラグインの費用が想定外。',
-    effect: { type: 'EXTRA_COST', amount: 1 },
+    id: 'ev-bug-2',
+    name: '仕様漏れ',
+    description: '「あ、この機能は動く想定だったんですけど」',
+    effects: [{ type: 'INTERRUPT', kind: 'bug', amount: 2 }],
   },
   {
-    id: 'rq-midnight',
-    name: '深夜対応',
-    description: '本番反映は利用者の少ない深夜に。',
-    effect: { type: 'EXTRA_FATIGUE', amount: 1 },
-  },
-  {
-    id: 'rq-template',
-    name: '使えるテンプレがあった',
-    description: '過去案件の資産がほぼそのまま流用できた。',
-    effect: { type: 'COST_DISCOUNT', amount: 1 },
-  },
-  {
-    id: 'rq-portfolio',
-    name: 'ポートフォリオ掲載OK',
-    description: '実績公開の許可が出た。チームの士気が上がる。',
-    effect: { type: 'BONUS_DELIVERABLE', level: 1 },
-  },
-  {
-    id: 'rq-as-spec',
-    name: '仕様書どおり',
-    description: '珍しく、書いてあるとおりだった。',
-    effect: { type: 'NONE' },
+    id: 'ev-consult',
+    name: '急な相談',
+    description: '次のキャンペーンのこと、相談したいんだけど...',
+    effects: [{ type: 'INTERRUPT', kind: 'consult', amount: 2, rewardBudget: 2 }],
   },
 ]
 
-/** 限界イベントカード(デメリット6枚 + 「何も起きない」1枚) */
+/** 炎上カード(9枚) */
+export const FIRES: FireCard[] = [
+  {
+    id: 'fire-most-1',
+    name: '「これが一番重要です」',
+    target: 'most_cubes',
+  },
+  {
+    id: 'fire-most-2',
+    name: '仕様の膨張',
+    target: 'most_cubes',
+  },
+  {
+    id: 'fire-most-3',
+    name: 'スコープクリープ',
+    target: 'most_cubes',
+  },
+  {
+    id: 'fire-finish-1',
+    name: '終盤の駆け込み要望',
+    target: 'lane_finish',
+  },
+  {
+    id: 'fire-finish-2',
+    name: 'テスト中に仕様変更',
+    target: 'lane_finish',
+  },
+  {
+    id: 'fire-oldest-1',
+    name: '古傷が疼く',
+    target: 'oldest',
+  },
+  {
+    id: 'fire-oldest-2',
+    name: '当初計画の誤算',
+    target: 'oldest',
+  },
+  {
+    id: 'fire-epidemic-1',
+    name: '全面炎上',
+    target: 'epidemic',
+  },
+  {
+    id: 'fire-epidemic-2',
+    name: 'クライアント激怒',
+    target: 'epidemic',
+  },
+]
+
+/** 限界イベントカード(7枚: デメリット6 + 何も起きない1) */
 export const LIMIT_EVENTS: LimitEventCard[] = [
   {
     id: 'lm-sick',
-    name: '体調を崩した',
-    description: '無理がたたって寝込んだ。次のフェーズは出力が落ちる。',
-    effect: { type: 'TOKEN_PENALTY_NEXT', amount: 1 },
+    name: '体調不良',
+    description: 'コロナか、それとも過労か。寝込んだ。',
+    effect: { type: 'FATIGUE_ALL', amount: 1 },
   },
   {
-    id: 'lm-mistake',
+    id: 'lm-bug',
     name: '深夜のデプロイミス',
     description: '朦朧とした頭で本番を壊した。',
     effect: { type: 'CS', amount: -1 },
   },
   {
-    id: 'lm-rework',
-    name: '手戻り発生',
-    description: '疲れた目はタイポを見逃す。作り直し。',
+    id: 'lm-rework-cost',
+    name: '手戻りコスト',
+    description: '疲れた目はタイポを見逃す。やり直し。',
     effect: { type: 'BUDGET', amount: -2 },
   },
   {
-    id: 'lm-quality-drop',
-    name: '品質の妥協',
-    description: '「もうこれでいいか」が成果物に滲み出た。',
-    effect: { type: 'QUALITY_DOWN' },
+    id: 'lm-overtime-ban',
+    name: '過労警告',
+    description: '労務管理から「来週は残業禁止」指示が来た。',
+    effect: { type: 'OVERTIME_BAN' },
   },
   {
-    id: 'lm-bad-mood',
-    name: 'ピリつく空気',
-    description: '限界のメンバーがチーム全体の空気を重くした。',
-    effect: { type: 'FATIGUE_ALL', amount: 1 },
-  },
-  {
-    id: 'lm-overtime-pay',
-    name: '残業代の請求',
-    description: '労務管理は大事。コストとして跳ね返ってきた。',
+    id: 'lm-budget-hit',
+    name: '予算使い果たし',
+    description: '想定外の支出が重なった。',
     effect: { type: 'BUDGET', amount: -1 },
+  },
+  {
+    id: 'lm-quality-down',
+    name: '空気の重さ',
+    description: '限界のメンバーがチーム全体を暗くした。',
+    effect: { type: 'CS', amount: -1 },
   },
   {
     id: 'lm-nothing',
@@ -188,173 +267,66 @@ export const LIMIT_EVENTS: LimitEventCard[] = [
   },
 ]
 
-/** 個人目標カード(4枚) */
-export const PERSONAL_GOALS: PersonalGoalCard[] = [
+/** メンバーカード(6枚: 最低4種の能力を網羅。合計スキル3~4) */
+export const MEMBERS: MemberCard[] = [
   {
-    id: 'pg-quality',
-    name: '品質の鬼',
-    description: '自分が参加したタスクから Lv2 成果物を3個以上獲得する',
-    condition: { type: 'LV2_DELIVERABLES_AT_LEAST', count: 3 },
+    id: 'm-allrounder',
+    name: '元エンジニアの何でも屋',
+    flavor: 'バックエンド出身。DevOps経験も豊富。',
+    skills: { direction: 1, design: 1, engineering: 1 },
+    ability: 'multitask',
   },
   {
-    id: 'pg-learner',
-    name: '学習マニア',
-    description: 'スキル合計を初期値から +2 以上成長させる',
-    condition: { type: 'SKILL_GROWTH_AT_LEAST', amount: 2 },
+    id: 'm-designer-polish',
+    name: 'デザイン寄り職人',
+    flavor: 'グラフィックデザイン背景。細部へのこだわりが強い。',
+    skills: { direction: 1, design: 2, engineering: 0 },
+    ability: 'polish',
   },
   {
-    id: 'pg-balance',
-    name: 'ワークライフバランス',
-    description: 'ゲーム終了時に疲労 Lv0 でいる',
-    condition: { type: 'FATIGUE_AT_MOST', level: 0 },
+    id: 'm-pm-expedite',
+    name: 'マネジメント寄りリーダー',
+    flavor: '営業出身。段取りと調整が得意。',
+    skills: { direction: 2, design: 1, engineering: 0 },
+    ability: 'expedite',
   },
   {
-    id: 'pg-cost-keeper',
-    name: 'コスト番人',
-    description: 'ゲーム終了時に予算を初期値の3割以上残す',
-    condition: { type: 'BUDGET_RATIO_AT_LEAST', ratio: 0.3 },
+    id: 'm-engineer-automate',
+    name: '開発寄りテックリード',
+    flavor: 'フロントエンド出身。自動化・効率化を常に考える。',
+    skills: { direction: 0, design: 1, engineering: 2 },
+    ability: 'automate',
   },
   {
-    id: 'pg-hub',
-    name: 'ハブ人材',
-    description: 'EP(自分の仕事が他人に使われた回数)を5以上にする',
-    condition: { type: 'EP_AT_LEAST', amount: 5 },
+    id: 'm-balanced',
+    name: '新卒からの全経験者',
+    flavor: 'スタートアップで全職を経験。どこでも対応できる。',
+    skills: { direction: 1, design: 1, engineering: 2 },
+    ability: 'expedite',
   },
   {
-    id: 'pg-firefighter',
-    name: '火消し屋',
-    description: '累計4回以上消火する',
-    condition: { type: 'EXTINGUISH_AT_LEAST', count: 4 },
-  },
-  {
-    id: 'pg-generalist',
-    name: '何でも屋',
-    description: '3系統すべてのスキルを Lv1 以上にする',
-    condition: { type: 'ALL_SKILLS_AT_LEAST', level: 1 },
-  },
-  {
-    id: 'pg-steady',
-    name: '安定稼働',
-    description: 'ゲーム終了時に疲労 Lv1 以下でいる',
-    condition: { type: 'FATIGUE_AT_MOST', level: 1 },
+    id: 'm-specialist',
+    name: 'UIデザインスペシャリスト',
+    flavor: '有名プロダクト出身。UXへのこだわりが一級。',
+    skills: { direction: 1, design: 2, engineering: 1 },
+    ability: 'polish',
   },
 ]
 
-/** マイルストーンカード(v2.1。公開・早取り) */
-export const MILESTONES: MilestoneCard[] = [
-  {
-    id: 'ms-firefighter',
-    name: '火消し番長',
-    description: '最初に累計5回消火する',
-    condition: { type: 'EXTINGUISH_AT_LEAST', count: 5 },
-  },
-  {
-    id: 'ms-quality',
-    name: '品質職人',
-    description: '最初に Lv2 成果物2個に参加する',
-    condition: { type: 'LV2_PARTICIPATED_AT_LEAST', count: 2 },
-  },
-  {
-    id: 'ms-learner',
-    name: '学習の鬼',
-    description: '最初にスキルアップを2回行う',
-    condition: { type: 'SKILL_UP_AT_LEAST', count: 2 },
-  },
-  {
-    id: 'ms-unsung',
-    name: '縁の下',
-    description: '最初に EP 4 に到達する',
-    condition: { type: 'EP_AT_LEAST', amount: 4 },
-  },
-  {
-    id: 'ms-workhorse',
-    name: '鬼の工数',
-    description: '最初に1フェーズ中にトークン5個以上をタスクへ配置する',
-    condition: { type: 'PHASE_PLACEMENTS_AT_LEAST', count: 5 },
-  },
-]
-
-/** クライアントカード(3枚) */
-export const CLIENTS: ClientCard[] = [
-  {
-    id: 'cl-marunage',
-    name: '丸投げ商事',
-    personality: '丸投げ系。「いい感じにしてください」が口癖。納期だけは譲らない。',
-    weights: { q: 1, c: 1, d: 3 },
-  },
-  {
-    id: 'cl-komakai',
-    name: 'コマカイ製作所',
-    personality: '細かい系。赤入れ PDF が毎朝届く。品質には一切妥協しない。',
-    weights: { q: 3, c: 1, d: 1 },
-  },
-  {
-    id: 'cl-genba',
-    name: 'ゲンバ重視ホールディングス',
-    personality: '現場重視。話は早いが、予算の決裁は渋い。',
-    weights: { q: 1, c: 3, d: 1 },
-  },
-]
-
-/** プロジェクトカード(3枚) */
-export const PROJECTS: ProjectCard[] = [
-  {
-    id: 'pj-corporate',
-    name: 'コーポレートサイトリニューアル',
-    projectType: 'CMS',
-    specialRequirements: ['CMS 組み込み', 'レスポンシブ対応'],
-  },
-  {
-    id: 'pj-brand',
-    name: 'ブランドサイト新規構築',
-    projectType: 'ブランドサイト',
-    specialRequirements: ['多言語対応', 'アニメーション演出'],
-  },
-  {
-    id: 'pj-campaign',
-    name: '季節キャンペーン LP',
-    projectType: 'キャンペーン',
-    specialRequirements: ['GA 実装', '公開日固定'],
-  },
-]
-
-/** プロジェクトシート(シナリオ) */
+/** プロジェクトシート(2枚: スタンダード・ハード) */
 export const PROJECT_SHEETS: ProjectSheet[] = [
   {
     id: 'ps-standard',
     name: 'スタンダード案件',
     initialCs: 5,
     initialBudget: 18,
-    phaseRules: [
-      { qualityThreshold: 1, deadlineAllowance: 1, csPenaltyQuality: 1, csPenaltyDeadline: 1 },
-      { qualityThreshold: 1, deadlineAllowance: 1, csPenaltyQuality: 1, csPenaltyDeadline: 1 },
-      { qualityThreshold: 1, deadlineAllowance: 2, csPenaltyQuality: 1, csPenaltyDeadline: 1 },
-      { qualityThreshold: 1, deadlineAllowance: 0, csPenaltyQuality: 1, csPenaltyDeadline: 1 },
-    ],
-    specialRule: null,
-  },
-]
-
-/** ロール定義(初期スキル値。RULES.md §9-6 のコンテンツデザイン暫定値) */
-export const ROLES: RoleDef[] = [
-  {
-    role: 'pm',
-    name: 'PM',
-    initialSkills: { direction: 2, design: 0, engineering: 0 },
+    description: 'フルスタック Web サイト。予算・納期ともに標準的。チーム4〜5名で4フェーズ完走を想定。',
   },
   {
-    role: 'director',
-    name: 'ディレクター',
-    initialSkills: { direction: 1, design: 1, engineering: 0 },
-  },
-  {
-    role: 'designer',
-    name: 'デザイナー',
-    initialSkills: { direction: 0, design: 2, engineering: 0 },
-  },
-  {
-    role: 'engineer',
-    name: 'エンジニア',
-    initialSkills: { direction: 0, design: 0, engineering: 2 },
+    id: 'ps-hard',
+    name: 'ハード案件',
+    initialCs: 4,
+    initialBudget: 14,
+    description: '予算シビア、品質要求高。難易度UP。上級者向け。チームの連携と優先度判断がカギ。',
   },
 ]

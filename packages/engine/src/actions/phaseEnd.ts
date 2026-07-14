@@ -1,54 +1,45 @@
 /**
- * フェーズ終了処理(RULES.md §2-4)と次フェーズへの進行・最終勝敗判定
- *
- * トークン経済の暫定実装(RULES.md に明記がない点):
- * - 「解決済みタスク上のトークンを回収」はストック(共通サプライ)への回収とし、
- *   プレイヤーの手元には戻らない。手元へは毎フェーズ開始時の補充(+tokensPerPhase)のみ
- * - 未使用の手持ちトークンは次フェーズに持ち越せる
+ * フェーズ終了(約束の清算)と最終検収(rules-v4-core.md §1-3)
  */
-import type { GameState, PhaseEndSummary, PlayerState } from '../types/state'
-import type { PersonalGoalCard } from '../types/content'
+import type { GameState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
-import { applyWeight, changeCs, getClient, getSheet } from '../helpers'
-import { publishPhaseTasks } from './setup'
-import { beginPhaseStart } from './fire'
-import { hasMilestone } from './milestones'
+import { addLog, changeCs, getAcceptance, getSlotState } from '../helpers'
+import { openScopeMeeting } from './scope'
 
 /**
- * フェーズ終了判定(実行ステップ完了時に自動で呼ばれる)
- * 1. 納期(D)判定 → 2. 品質(Q)判定 → 3. 疲労の自然回復 → 4. トークン回収/持ち越し
+ * フェーズ終了処理(最終週の END_WEEKEND から呼ばれる):
+ * 約束の清算 → バグ放置の出血 → 疲労回復 → step 'phase_end'
  */
 export function processPhaseEnd(state: GameState): GameState {
-  const sheet = getSheet(state)
-  const client = getClient(state)
-  const rule = sheet.phaseRules[state.phase - 1]!
-  let csDelta = 0
-  let next = state
+  let next = addLog(state, `── フェーズ${state.phase} 終了の清算 ──`)
 
-  // ── 1. 納期(D)判定:未解決タスク数が許容数を超えていれば CS 減少 ──
-  const unresolvedCount = next.taskArea.filter((t) => !t.resolved).length
-  const deadlineMet = unresolvedCount <= rule.deadlineAllowance
-  if (!deadlineMet) {
-    const penalty = applyWeight(rule.csPenaltyDeadline, client.weights.d, next.config.qcdWeightMode)
-    csDelta -= penalty
-    next = changeCs(next, -penalty)
+  // ── 1. 約束の清算(猶予中はスキップ)──
+  for (const commitment of next.commitments) {
+    if (next.result !== null) return next
+    if (commitment.graceUntilPhase >= next.phase) {
+      const card = getAcceptance(next.content, commitment.acceptanceId)
+      next = addLog(next, `⏳ 「${card?.name}」は交渉により猶予中(今回の清算なし)`)
+      continue
+    }
+    const card = getAcceptance(next.content, commitment.acceptanceId)
+    next = changeCs(next, -next.config.commitPenaltyCs)
+    next = addLog(
+      next,
+      `💢 約束した「${card?.name}」が未達(CS-${next.config.commitPenaltyCs})`,
+    )
+  }
+  if (next.result !== null) return next
+
+  // ── 2. バグ放置の出血 ──
+  const openBugs = next.board.filter((t) => t.interrupt === 'bug')
+  for (const _bug of openBugs) {
+    next = changeCs(next, -1)
+    next = addLog(next, '🐛 バグを放置したままフェーズが終わった(CS-1)')
     if (next.result !== null) return next
   }
 
-  // ── 2. 品質(Q)判定:このフェーズで獲得した Lv2 成果物数が基準未達なら CS 減少 ──
-  const lv2Count = next.deliverables.filter(
-    (d) => d.level === 2 && d.acquiredPhase === next.phase,
-  ).length
-  const qualityMet = lv2Count >= rule.qualityThreshold
-  if (!qualityMet) {
-    const penalty = applyWeight(rule.csPenaltyQuality, client.weights.q, next.config.qcdWeightMode)
-    csDelta -= penalty
-    next = changeCs(next, -penalty)
-    if (next.result !== null) return next
-  }
-
-  // ── 3. 疲労の自然回復:全員 -phaseEndRecovery ──
+  // ── 3. 疲労の自然回復 ──
   next = {
     ...next,
     players: next.players.map((p) => ({
@@ -57,140 +48,55 @@ export function processPhaseEnd(state: GameState): GameState {
     })),
   }
 
-  // ── 3'. 学習の反映(v3.0 ワーカーモード:学習週数 → スキルLv)──
-  if (next.config.workerCommitEnabled) {
-    next = {
-      ...next,
-      players: next.players.map((p) => {
-        let skills = { ...p.skills }
-        let progress = { ...p.learningProgress }
-        let ups = 0
-        for (const skill of ['direction', 'design', 'engineering'] as const) {
-          const gains = Math.floor(progress[skill] / next.config.learnWeeksPerLevel)
-          const applied = Math.min(gains, next.config.skillMax - skills[skill])
-          if (applied > 0) {
-            skills = { ...skills, [skill]: skills[skill] + applied }
-            ups += applied
-          }
-          progress = { ...progress, [skill]: progress[skill] % next.config.learnWeeksPerLevel }
-        }
-        return { ...p, skills, learningProgress: progress, skillUpCount: p.skillUpCount + ups }
-      }),
-    }
-  }
-
-  // ── 4. トークン回収:解決済みタスクはエリアから除去(トークンはストックへ)。
-  //       未解決タスクは carryOverTokens に従いトークンを持ち越す ──
-  next = {
-    ...next,
-    taskArea: next.taskArea
-      .filter((t) => !t.resolved)
-      .map((t) => (next.config.carryOverTokens ? t : { ...t, tokens: {} })),
-  }
-
-  const summary: PhaseEndSummary = {
-    phase: next.phase,
-    unresolvedCount,
-    deadlineMet,
-    lv2Count,
-    qualityMet,
-    csDelta,
-  }
-  return { ...next, step: 'phase_end', lastPhaseSummary: summary }
+  return { ...next, step: 'phase_end' }
 }
 
-/** 個人目標の達成判定 */
-export function evaluatePersonalGoal(state: GameState, player: PlayerState): boolean {
-  const goal: PersonalGoalCard | undefined = state.content.personalGoals.find(
-    (g) => g.id === player.personalGoalId,
-  )
-  if (!goal) return false
-  const condition = goal.condition
-  switch (condition.type) {
-    case 'LV2_DELIVERABLES_AT_LEAST':
-      return (
-        state.deliverables.filter(
-          (d) => d.level === 2 && d.participants.includes(player.id),
-        ).length >= condition.count
-      )
-    case 'SKILL_GROWTH_AT_LEAST': {
-      const total = player.skills.direction + player.skills.design + player.skills.engineering
-      return total - player.initialSkillTotal >= condition.amount
-    }
-    case 'FATIGUE_AT_MOST':
-      return player.fatigue <= condition.level
-    case 'BUDGET_RATIO_AT_LEAST':
-      return state.budget >= state.initialBudget * condition.ratio
-    case 'EP_AT_LEAST':
-      return player.ep >= condition.amount
-    case 'EXTINGUISH_AT_LEAST':
-      return player.extinguishCount >= condition.count
-    case 'ALL_SKILLS_AT_LEAST':
-      return (
-        player.skills.direction >= condition.level &&
-        player.skills.design >= condition.level &&
-        player.skills.engineering >= condition.level
-      )
-  }
-}
-
-/** 個人勝利:個人目標達成 または マイルストーン獲得(RULES.md §1 / §11) */
-export function evaluatePersonalWin(state: GameState, player: PlayerState): boolean {
-  if (evaluatePersonalGoal(state, player)) return true
-  return state.config.milestonesEnabled && hasMilestone(state, player.id)
-}
-
-/** ADVANCE_PHASE — 次フェーズへ進む。最終フェーズなら勝敗判定(RULES.md §1) */
+/** ADVANCE_PHASE — 次フェーズへ。最終フェーズなら最終検収と勝敗判定 */
 export function handleAdvancePhase(state: GameState): GameState | RuleViolation {
   if (state.step !== 'phase_end') {
-    return violation('PHASE_NOT_ENDED', 'フェーズ終了処理が完了していません。')
+    return violation('INVALID_STEP', 'フェーズ終了処理中ではありません。')
   }
 
-  // ── 最終フェーズ終了 → 勝敗判定 ──
+  // ── 最終検収(rules-v4-core.md §1-3-5)──
   if (state.phase >= state.config.phases) {
-    const won = state.cs >= 0
+    let next = addLog(state, '── 最終検収 ──')
+    for (const id of next.openAcceptanceIds) {
+      if (next.metAcceptanceIds.includes(id)) continue
+      const card = getAcceptance(next.content, id)
+      if (!card) continue
+      const slot = getSlotState(next, card.slot)
+      const compromised =
+        slot !== undefined && slot.level >= 1 && slot.reworkCubes === 0 && slot.level < card.level
+      const penalty = compromised ? next.config.finalCompromiseCs : next.config.finalMissCs
+      next = changeCs(next, -penalty)
+      next = addLog(
+        next,
+        compromised
+          ? `📉 「${card.name}」:Lv${card.level} 要求を Lv${slot!.level} で納めた(CS-${penalty})`
+          : `❌ 「${card.name}」:未達成(CS-${penalty})`,
+      )
+      if (next.result !== null) return next
+    }
+    const won = next.cs >= 0
     return {
-      ...state,
+      ...next,
       step: 'finished',
       result: {
         outcome: won ? 'win' : 'lose',
         reason: won
-          ? `最終フェーズ終了時に CS ${state.cs} ≥ 0 のため、チームは勝利しました。`
-          : `最終フェーズ終了時に CS ${state.cs} < 0 のため、チームは敗北しました。`,
-        // チーム敗北時は個人目標を評価しない(RULES.md §1)
-        personalResults: Object.fromEntries(
-          state.players.map((p) => [p.id, won ? evaluatePersonalWin(state, p) : false]),
-        ),
+          ? `最終検収を終えて CS ${next.cs} ≥ 0。プロジェクトは成功しました!`
+          : `最終検収の結果 CS ${next.cs} < 0。プロジェクトは失敗しました…`,
       },
     }
   }
 
-  // ── 次フェーズ開始(RULES.md §2-1):タスク公開 → 炎上 → イベント → トークン補充 ──
-  const workerMode = state.config.workerCommitEnabled
-  const nextPhase = state.phase + 1
-  let next: GameState = {
+  // ── 次フェーズのスコープ会議へ ──
+  const next: GameState = {
     ...state,
-    phase: nextPhase,
-    step: 'planning',
-    readyPlayerIds: [],
-    resolutionQueue: null,
-    resolutionLog: [],
-    nextTaskCostModifier: 0,
-    outsourceCountThisPhase: 0,
-    // v3.0 ワーカーモード:週・配属・追加請求カウンタをリセット
-    week: workerMode ? 1 : state.week,
-    assignments: [],
+    phase: state.phase + 1,
     extraBillingUsedThisPhase: 0,
-    // フェーズ単位のカウンタ・記録をリセット。
-    // ワーカーモードでは TOKEN_PENALTY_NEXT を「次フェーズは残業禁止」に読み替える
-    players: state.players.map((p) => ({
-      ...p,
-      tokensPlacedThisPhase: 0,
-      overtimeBanPhase: workerMode && p.nextPhaseTokenPenalty > 0 ? nextPhase : p.overtimeBanPhase,
-      nextPhaseTokenPenalty: workerMode ? 0 : p.nextPhaseTokenPenalty,
-    })),
-    taskArea: state.taskArea.map((t) => ({ ...t, extinguisherIds: [] })),
+    assignments: [],
+    readyPlayerIds: [],
   }
-  next = publishPhaseTasks(next, next.phase)
-  return beginPhaseStart(next, !workerMode)
+  return openScopeMeeting(next)
 }

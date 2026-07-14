@@ -1,71 +1,74 @@
 /**
- * コンテンツ(タスクタイル・カード類)の型定義(RULES.md §6)
+ * コンテンツ(カード・スロット類)の型定義(rules-v4-core.md §0・§2・§3)
  */
 
-/** スキル系統(RULES.md §9-4 暫定:ディレクション/デザイン/エンジニアリング) */
+/** スキル系統 */
 export type SkillKind = 'direction' | 'design' | 'engineering'
 
-/** ロール */
-export type Role = 'pm' | 'director' | 'designer' | 'engineer'
+/** WBS の列(レーン文法) */
+export type Lane = 'start' | 'middle' | 'finish'
 
-/** 成果物レベル(Lv1=通常 / Lv2=高品質) */
+/** 成果物レベル */
 export type DeliverableLevel = 1 | 2
 
-/** スキル条件(系統×レベル) */
-export interface SkillRequirement {
-  /** スキル系統 */
-  skill: SkillKind
-  /** 必要レベル(1〜2) */
-  level: number
-}
-
 /**
- * タスクの席(v3.0 ワーカーモード。rules-v3-proposal.md §2)
- * 専門席は指定系統のスキルが必要。人手席(skill: null)は誰でも立てる。
+ * タスクカード(検収条件を満たす「手段」。同じスロットに複数の道がある)
  */
-export interface TaskSeat {
-  /** 専門席の系統(人手席なら null) */
-  skill: SkillKind | null
-  /** 必要レベル(専門席のみ意味を持つ) */
-  level: number
-}
-
-/** タスクタイルの特殊効果 */
-export type TaskSpecialEffect =
-  /** 次タスクの実行コスト減 */
-  | { type: 'NEXT_TASK_COST_DOWN'; amount: number }
-
-/** タスクタイル */
-export interface TaskTile {
-  /** タイルID */
+export interface TaskCard {
+  /** カードID */
   id: string
   /** タスク名(フレーバー) */
   name: string
-  /** 対応フェーズ(1〜4) */
+  /** 対応フェーズテーマ(1〜4。このフェーズ以降の候補プールに補充される) */
   phase: number
-  /** 必要行動トークン数(積み上げ式で充足。v1/v2 モード用) */
-  requiredTokens: number
-  /** 席の定義(v3.0 ワーカーモード用。🔥1個につき応援1人の追加需要が乗る) */
-  seats: TaskSeat[]
-  /** 成果物獲得(0〜2個、各 Lv1/Lv2) */
-  deliverables: DeliverableLevel[]
-  /** スキル条件(なしの場合 null) */
-  skillRequirement: SkillRequirement | null
-  /** 秘匿要件フラグ(あり→実行時に要件カード2枚から1枚選択) */
-  hiddenRequirement: boolean
-  /** 連鎖(依存)要件:親タスクのタイルID(同フェーズ内) */
-  dependsOn: string[]
-  /** 協業フラグ(暫定:複数プレイヤーのトークンが必須) */
-  collaboration: boolean
-  /** イベントマーク(あり→解決時にイベントカードを引く) */
-  eventMark: boolean
-  /** 実行コスト(予算消費値) */
+  /** 埋めるプロダクトボードのスロットID */
+  slot: string
+  /** 系統(v4.0 は単一系統) */
+  skill: SkillKind
+  /** 必要工数(キューブ数) */
+  effort: number
+  /** 上限Lv(1 = 安い道。積み増しによる Lv2 納品は不可) */
+  maxLevel: DeliverableLevel
+  /** 座った週の疲労値(1 通常 / 2 重) */
+  fatigue: 1 | 2
+  /** 納品時の実行コスト(予算) */
   cost: number
-  /** 実行時疲労値(+1 通常 / +2 重タスク) */
-  fatigue: number
-  /** 特殊効果(なしの場合 null) */
-  specialEffect: TaskSpecialEffect | null
+  /** 配置できる列 */
+  lane: Lane
 }
+
+/** プロダクトボードのスロット定義 */
+export interface SlotDef {
+  /** スロットID */
+  id: string
+  /** 表示名(例:トップページ) */
+  name: string
+  /** 改修・手戻り対応に使う系統 */
+  skill: SkillKind
+}
+
+/** 検収条件カード(お客様の求める成果。スロット×要求Lv) */
+export interface AcceptanceCard {
+  /** カードID */
+  id: string
+  /** 条件名(例:「トップページは磨き込みたい」) */
+  name: string
+  /** 公開されるフェーズ(1〜phases) */
+  phase: number
+  /** 対象スロットID */
+  slot: string
+  /** 要求レベル */
+  level: DeliverableLevel
+}
+
+/** 差し込みの種類(rules-v4-core.md §1-2-1) */
+export type InterruptKind =
+  /** 手戻り:納品済みスロットに手戻りキューブ。乗っている間そのスロットは検収上未達 */
+  | 'rework'
+  /** バグ報告:対応タスクが出る。未対応の間フェーズ末ごとに CS-1 */
+  | 'bug'
+  /** 相談ごと:任意対応。完了で報酬 */
+  | 'consult'
 
 /** イベントカードの効果 */
 export type EventEffect =
@@ -75,10 +78,12 @@ export type EventEffect =
   | { type: 'CS'; amount: number }
   /** 全員の疲労増減 */
   | { type: 'FATIGUE_ALL'; amount: number }
+  /** 差し込み(rework: cubes 個の手戻り / bug・consult: effort 個の割り込みタスク) */
+  | { type: 'INTERRUPT'; kind: InterruptKind; amount: number; rewardBudget?: number }
   /** 何も起きない */
   | { type: 'NONE' }
 
-/** イベントカード */
+/** イベントカード(週初のトラブル) */
 export interface EventCard {
   /** カードID */
   id: string
@@ -90,31 +95,28 @@ export interface EventCard {
   effects: EventEffect[]
 }
 
-/** 要件カードの効果(タスクの秘匿要件) */
-export type RequirementEffect =
-  /** 追加スキル条件(本当の必要スキル) */
-  | { type: 'EXTRA_SKILL'; requirement: SkillRequirement }
-  /** 追加コスト */
-  | { type: 'EXTRA_COST'; amount: number }
-  /** 追加疲労 */
-  | { type: 'EXTRA_FATIGUE'; amount: number }
-  /** コスト割引 */
-  | { type: 'COST_DISCOUNT'; amount: number }
-  /** ボーナス成果物 */
-  | { type: 'BONUS_DELIVERABLE'; level: DeliverableLevel }
-  /** 効果なし */
-  | { type: 'NONE' }
+/**
+ * 炎上カードのターゲット条件(名指しではなく条件式。rules-v4-core.md §0)
+ * 該当タスクが複数のときは盤面の配置順で先のもの(物理版は PM 裁定)。
+ */
+export type FireTarget =
+  /** キューブ最多の進行中(未納品)タスク */
+  | 'most_cubes'
+  /** 仕上げ列の未納品タスク(なければ中盤→起点) */
+  | 'lane_finish'
+  /** 最も古く場に出た未納品タスク */
+  | 'oldest'
+  /** 大炎上:進行中の全タスクに🔥+1 */
+  | 'epidemic'
 
-/** 要件カード */
-export interface RequirementCard {
+/** 炎上カード */
+export interface FireCard {
   /** カードID */
   id: string
   /** カード名 */
   name: string
-  /** フレーバーテキスト */
-  description: string
-  /** 効果 */
-  effect: RequirementEffect
+  /** ターゲット条件 */
+  target: FireTarget
 }
 
 /** 限界イベントカードの効果(必ず発動するデメリット。「何も起きない」を1枚含む) */
@@ -125,10 +127,8 @@ export type LimitEventEffect =
   | { type: 'CS'; amount: number }
   /** 全員の疲労増加 */
   | { type: 'FATIGUE_ALL'; amount: number }
-  /** 対象プレイヤーの次フェーズ補充トークン減 */
-  | { type: 'TOKEN_PENALTY_NEXT'; amount: number }
-  /** チームの Lv2 成果物1つを Lv1 に劣化(Q低下) */
-  | { type: 'QUALITY_DOWN' }
+  /** 対象プレイヤーは次フェーズ残業禁止 */
+  | { type: 'OVERTIME_BAN' }
   /** 何も起きない */
   | { type: 'NONE' }
 
@@ -144,69 +144,29 @@ export interface LimitEventCard {
   effect: LimitEventEffect
 }
 
-/** 個人目標カードの達成条件 */
-export type PersonalGoalCondition =
-  /** 自分が参加したタスク由来の Lv2 成果物が N 個以上 */
-  | { type: 'LV2_DELIVERABLES_AT_LEAST'; count: number }
-  /** スキル合計が初期値から N 以上成長 */
-  | { type: 'SKILL_GROWTH_AT_LEAST'; amount: number }
-  /** ゲーム終了時の疲労が Lv N 以下 */
-  | { type: 'FATIGUE_AT_MOST'; level: number }
-  /** ゲーム終了時の予算が初期予算の N 割以上 */
-  | { type: 'BUDGET_RATIO_AT_LEAST'; ratio: number }
-  /** EP が N 以上(v2.1) */
-  | { type: 'EP_AT_LEAST'; amount: number }
-  /** 累計消火回数が N 以上(v2.1) */
-  | { type: 'EXTINGUISH_AT_LEAST'; count: number }
-  /** 全スキル系統が Lv N 以上(v2.1) */
-  | { type: 'ALL_SKILLS_AT_LEAST'; level: number }
+/** 個人能力の種類(メンバーカードに1つ。rules-v4-core.md §3) */
+export type AbilityKind =
+  /** マルチタスク(パッシブ):残業の追加疲労なし */
+  | 'multitask'
+  /** 磨き込み:週末に納品済みスロット1つを Lv1→Lv2 */
+  | 'polish'
+  /** 段取り:朝会で宣言。今週自分の積むキューブ+1 */
+  | 'expedite'
+  /** 自動化:未納品タスク1つの必要工数-1(いつでも) */
+  | 'automate'
 
-/** 個人目標カード(各自1枚、非公開) */
-export interface PersonalGoalCard {
+/** メンバーカード(能力=傾向を持った個人) */
+export interface MemberCard {
   /** カードID */
   id: string
-  /** カード名 */
+  /** 名前(例:元エンジニアの何でも屋) */
   name: string
-  /** 条件の説明文 */
-  description: string
-  /** 達成条件 */
-  condition: PersonalGoalCondition
-}
-
-/** クライアントカード(QCD 重みパラメータ + 性格フレーバー) */
-export interface ClientCard {
-  /** カードID */
-  id: string
-  /** クライアント名 */
-  name: string
-  /** 性格フレーバー(暫定:ルール効果なし) */
-  personality: string
-  /** QCD 重み(q=品質 / c=コスト / d=納期) */
-  weights: { q: number; c: number; d: number }
-}
-
-/** プロジェクトカード(種別 + 特殊要件フレーバー) */
-export interface ProjectCard {
-  /** カードID */
-  id: string
-  /** プロジェクト名 */
-  name: string
-  /** プロジェクト種別(CMS、ブランドサイト など) */
-  projectType: string
-  /** 特殊要件(暫定:フレーバーのみ) */
-  specialRequirements: string[]
-}
-
-/** フェーズごとの判定ルール(プロジェクトシートの一部) */
-export interface PhaseRule {
-  /** 品質基準:このフェーズで獲得すべき Lv2 成果物数 */
-  qualityThreshold: number
-  /** 納期許容数:フェーズ終了時に許容される未解決タスク数 */
-  deadlineAllowance: number
-  /** 品質未達時の CS 基本減少値(重み適用前) */
-  csPenaltyQuality: number
-  /** 納期超過時の CS 基本減少値(重み適用前) */
-  csPenaltyDeadline: number
+  /** 経歴フレーバー */
+  flavor: string
+  /** 初期スキルプロファイル */
+  skills: Record<SkillKind, number>
+  /** 個人能力 */
+  ability: AbilityKind
 }
 
 /** プロジェクトシート(シナリオ定義) */
@@ -215,71 +175,30 @@ export interface ProjectSheet {
   id: string
   /** シナリオ名 */
   name: string
-  /** 初期 CS 値 */
+  /** 初期 CS */
   initialCs: number
   /** 初期予算 */
   initialBudget: number
-  /** フェーズごとの判定ルール(phases 数ぶん) */
-  phaseRules: PhaseRule[]
-  /** 特殊ルール(暫定:フレーバーのみ) */
-  specialRule: string | null
-}
-
-/** マイルストーンの達成条件(v2.1。公開・早取り) */
-export type MilestoneCondition =
-  /** 累計消火回数が N 以上 */
-  | { type: 'EXTINGUISH_AT_LEAST'; count: number }
-  /** 自分が参加した Lv2 成果物が N 個以上 */
-  | { type: 'LV2_PARTICIPATED_AT_LEAST'; count: number }
-  /** スキルアップ回数が N 以上 */
-  | { type: 'SKILL_UP_AT_LEAST'; count: number }
-  /** EP が N 以上 */
-  | { type: 'EP_AT_LEAST'; amount: number }
-  /** 1フェーズ内にタスクへ配置したトークンが N 個以上 */
-  | { type: 'PHASE_PLACEMENTS_AT_LEAST'; count: number }
-
-/** マイルストーンカード(v2.1。最初に達成した1人だけが獲得) */
-export interface MilestoneCard {
-  /** カードID */
-  id: string
-  /** カード名 */
-  name: string
-  /** 条件の説明文 */
+  /** フレーバー(案件・クライアントの説明) */
   description: string
-  /** 達成条件 */
-  condition: MilestoneCondition
-}
-
-/** ロール定義(初期スキル値。RULES.md §9-6 暫定) */
-export interface RoleDef {
-  /** ロール */
-  role: Role
-  /** 日本語名 */
-  name: string
-  /** 初期スキル値 */
-  initialSkills: Record<SkillKind, number>
 }
 
 /** ゲームコンテンツ一式 */
 export interface GameContent {
-  /** タスクタイル(フェーズごと) */
-  tasks: TaskTile[]
-  /** イベントカード */
+  /** プロダクトボードのスロット定義 */
+  slots: SlotDef[]
+  /** タスクカード */
+  tasks: TaskCard[]
+  /** 検収条件カード */
+  acceptance: AcceptanceCard[]
+  /** イベントカード(差し込み込み) */
   events: EventCard[]
-  /** 要件カード */
-  requirements: RequirementCard[]
+  /** 炎上カード */
+  fires: FireCard[]
   /** 限界イベントカード */
   limitEvents: LimitEventCard[]
-  /** 個人目標カード */
-  personalGoals: PersonalGoalCard[]
-  /** マイルストーンカード(v2.1) */
-  milestones: MilestoneCard[]
-  /** クライアントカード */
-  clients: ClientCard[]
-  /** プロジェクトカード */
-  projects: ProjectCard[]
+  /** メンバーカード */
+  members: MemberCard[]
   /** プロジェクトシート */
   projectSheets: ProjectSheet[]
-  /** ロール定義 */
-  roles: RoleDef[]
 }

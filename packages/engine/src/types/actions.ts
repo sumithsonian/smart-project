@@ -1,29 +1,31 @@
 /**
- * GameAction — エンジンに適用するアクションの型定義
+ * GameAction — エンジンに適用するアクションの型定義(rules-v4-core.md)
  * アクションはすべてシリアライズ可能(イベントソーシングのログになる)。
  */
 import type { GameConfig } from './config'
-import type { Role, SkillKind } from './content'
+import type { SkillKind } from './content'
 
-/** トークン配置先 */
-export type TokenTarget =
-  /** タスクタイル */
-  | { kind: 'task'; taskTileId: string }
-  /** 学習タイル(対象スキル系統を指定) */
-  | { kind: 'learning'; skill: SkillKind }
-
-/** ワーカーの配属先(v3.0 週次ワーカーコミット) */
+/** ワーカーの配属先(朝会) */
 export type WorkerTarget =
-  /** タスクの席(定義済みの専門席/人手席) */
-  | { kind: 'seat'; taskTileId: string; seatIndex: number }
-  /** 🔥ぶんの応援(席ではなく追加工数。🔥数まで) */
-  | { kind: 'support'; taskTileId: string }
-  /** 学習(今週は現場に立たない。フェーズ終了時に +Lv) */
-  | { kind: 'learning'; skill: SkillKind }
+  /** 盤上のタスクに座る(自分のその系統スキルぶんキューブを積む) */
+  | { kind: 'task'; cardId: string }
+  /** 納品済みスロットに座る(改修 or 手戻り対応。系統はスロット定義) */
+  | { kind: 'slot'; slotId: string }
+  /** 学習(来週からスキル+1) */
+  | { kind: 'learn'; skill: SkillKind }
   /** 休憩(疲労 -restRecovery) */
   | { kind: 'rest' }
-  /** 消火(対象タスクの🔥1個を週末に除去) */
-  | { kind: 'extinguish'; taskTileId: string }
+  /** 消火(任意のタスクの🔥1個を除去。系統・スキル不問) */
+  | { kind: 'extinguish'; cardId: string }
+
+/** PM 交渉のモード */
+export type NegotiationMode =
+  /** 約束1つの清算を1フェーズ猶予 */
+  | 'grace'
+  /** 約束1つの取り下げ(即時 CS-1、以後の罰なし) */
+  | 'withdraw'
+  /** スコープ会議中:タスク候補2枚を引き直す */
+  | 'redraw'
 
 /** セットアップ時のプレイヤー指定 */
 export interface PlayerSetup {
@@ -31,57 +33,60 @@ export interface PlayerSetup {
   id: string
   /** 表示名 */
   name: string
-  /** ロール */
-  role: Role
+  /** メンバーカードID(省略時はランダム配布) */
+  memberId?: string
 }
 
 /** ゲームアクション */
 export type GameAction =
-  /** ゲームセットアップ(RULES.md §7) */
+  /** ゲームセットアップ */
   | {
       type: 'SETUP_GAME'
       /** 乱数シード(リプレイ再現用) */
       seed: number
-      /** プレイヤー構成(PM をちょうど1人含むこと) */
+      /** プレイヤー構成 */
       players: PlayerSetup[]
+      /** PM 帽子を被るプレイヤーID(省略時は先頭) */
+      pmPlayerId?: string
       /** 設定の上書き(省略時は DEFAULT_CONFIG) */
       config?: Partial<GameConfig>
-      /** クライアントカードID(省略時はランダム) */
-      clientId?: string
-      /** プロジェクトカードID(省略時はランダム) */
-      projectCardId?: string
-      /** プロジェクトシートID(省略時は先頭のシート) */
+      /** プロジェクトシートID(省略時は先頭) */
       projectSheetId?: string
     }
-  /** 行動トークンを1個配置(プランニング。タスク/学習タイル) */
-  | { type: 'PLACE_TOKEN'; playerId: string; target: TokenTarget }
-  /** 配置済みトークンを1個回収(プランニング中の自分のトークンのみ) */
-  | { type: 'RETRIEVE_TOKEN'; playerId: string; target: TokenTarget }
-  /** 休憩スペースに配置(トークン1個で疲労回復) */
-  | { type: 'REST'; playerId: string }
-  /** 追加請求スペースに配置(CS と引き換えに予算回復) */
-  | { type: 'EXTRA_BILLING'; playerId: string }
-  /** 準備完了を宣言(全員揃うと実行ステップへ) */
-  | { type: 'DECLARE_READY'; playerId: string }
-  /** PM がタスク処理順を宣言(依存順を満たす全未解決タスクの順列) */
-  | { type: 'DECLARE_TASK_ORDER'; playerId: string; order: string[] }
-  /** 処理順の次のタスクを解決する */
-  | { type: 'RESOLVE_NEXT_TASK' }
-  /** 秘匿要件:提示された要件カード2枚から1枚を選ぶ */
-  | { type: 'SELECT_REQUIREMENT_CARD'; choiceIndex: 0 | 1 }
-  /** 解決待ちイベント(フェーズ開始/タスク/限界)を解決する */
+  // ── スコープ会議(PM が締める) ──
+  /** 検収条件を約束する(PM) */
+  | { type: 'COMMIT_ACCEPTANCE'; playerId: string; acceptanceId: string }
+  /** タスク候補を場(WBS レーン)に配置する(PM。列はカード定義) */
+  | { type: 'PLACE_TASK'; playerId: string; cardId: string }
+  /** スコープ会議を締めて第1週へ(PM) */
+  | { type: 'FINISH_SCOPE'; playerId: string }
+  // ── 週次 ──
+  /** 解決待ちイベント(週初トラブル/限界)を解決する */
   | { type: 'RESOLVE_EVENT' }
-  /** フェーズ終了処理のあと次フェーズへ進む(最終フェーズなら勝敗判定) */
-  | { type: 'ADVANCE_PHASE' }
-  /** 配られた個人目標カードから1枚を選ぶ(v2.1。goal_selection ステップ) */
-  | { type: 'SELECT_PERSONAL_GOAL'; playerId: string; choiceIndex: number }
-  /** 消火:行動トークンを支払ってタスクの🔥を1個除去する(v2.1。プランニング中) */
-  | { type: 'EXTINGUISH_FIRE'; playerId: string; taskTileId: string }
-  /** 大炎上のターゲットを PM が選ぶ(v2.1。選択タスクに🔥2個) */
-  | { type: 'SELECT_EPIDEMIC_TARGET'; playerId: string; taskTileId: string }
-  /** 外注:予算+CS を払ってタスクの専門席を充足する(v2.2。プランニング中) */
-  | { type: 'OUTSOURCE_TASK'; playerId: string; taskTileId: string }
-  /** 今週の配属を宣言する(v3.0。overtime=true は残業枠。朝会中のみ) */
+  /** 今週の配属を宣言する(overtime=true は残業枠) */
   | { type: 'ASSIGN_WORKER'; playerId: string; target: WorkerTarget; overtime?: boolean }
-  /** 今週の配属を取り消す(v3.0。朝会中のみ。効果は週末適用なので自由に組み替え可) */
+  /** 今週の配属を取り消す */
   | { type: 'UNASSIGN_WORKER'; playerId: string; overtime?: boolean }
+  /** 準備完了を宣言(全員揃うと週末処理へ) */
+  | { type: 'DECLARE_READY'; playerId: string }
+  /** 週末:必要工数に達したタスクを納品する(チーム判断。ホットシートでは誰でも操作可) */
+  | { type: 'DELIVER_TASK'; cardId: string }
+  /** 週末を締めて次週(または フェーズ終了)へ(PM) */
+  | { type: 'END_WEEKEND'; playerId: string }
+  /** フェーズ終了の清算を確認して次フェーズへ(最終フェーズなら勝敗判定) */
+  | { type: 'ADVANCE_PHASE' }
+  // ── PM 帽子・能力 ──
+  /** PM 交渉(フェーズ1回) */
+  | {
+      type: 'NEGOTIATE'
+      playerId: string
+      mode: NegotiationMode
+      /** grace / withdraw の対象 */
+      acceptanceId?: string
+      /** redraw で捨てる候補カードID(最大2枚) */
+      cardIds?: string[]
+    }
+  /** 追加請求(PM。フェーズ1回。CS と引き換えに予算回復) */
+  | { type: 'EXTRA_BILLING'; playerId: string }
+  /** 個人能力の使用(フェーズ1回。行動枠を使わない) */
+  | { type: 'USE_ABILITY'; playerId: string; cardId?: string; slotId?: string }

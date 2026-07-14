@@ -2,22 +2,33 @@
  * エンジン内部の共通ヘルパ(すべて純粋関数)
  */
 import type {
-  ClientCard,
-  EventCard,
-  EventEffect,
+  AcceptanceCard,
   GameContent,
-  LimitEventCard,
+  MemberCard,
   ProjectSheet,
-  RequirementCard,
-  TaskTile,
+  SlotDef,
+  TaskCard,
 } from './types/content'
-import type { GameState, PlayerState } from './types/state'
-import type { QcdWeightMode } from './types/config'
-import { drawCard } from './deck'
+import type { BoardTask, GameState, PlayerState, SlotState } from './types/state'
 
-/** タイルIDからタスクタイル定義を引く */
-export function getTile(content: GameContent, tileId: string): TaskTile | undefined {
-  return content.tasks.find((t) => t.id === tileId)
+/** タスクカード定義を引く */
+export function getTaskCard(content: GameContent, cardId: string): TaskCard | undefined {
+  return content.tasks.find((t) => t.id === cardId)
+}
+
+/** スロット定義を引く */
+export function getSlotDef(content: GameContent, slotId: string): SlotDef | undefined {
+  return content.slots.find((s) => s.id === slotId)
+}
+
+/** 検収条件カードを引く */
+export function getAcceptance(content: GameContent, id: string): AcceptanceCard | undefined {
+  return content.acceptance.find((a) => a.id === id)
+}
+
+/** メンバーカードを引く */
+export function getMember(content: GameContent, id: string): MemberCard | undefined {
+  return content.members.find((m) => m.id === id)
 }
 
 /** プレイヤーを引く */
@@ -30,57 +41,21 @@ export function getSheet(state: GameState): ProjectSheet {
   return state.content.projectSheets.find((s) => s.id === state.projectSheetId)!
 }
 
-/** 公開中のクライアントカード */
-export function getClient(state: GameState): ClientCard {
-  return state.content.clients.find((c) => c.id === state.clientId)!
+/** 盤上のタスクを引く */
+export function getBoardTask(state: GameState, cardId: string): BoardTask | undefined {
+  return state.board.find((t) => t.cardId === cardId)
 }
 
-/** イベントカードを引く */
-export function getEventCard(state: GameState, cardId: string): EventCard | undefined {
-  return state.content.events.find((c) => c.id === cardId)
+/** スロット状態を引く */
+export function getSlotState(state: GameState, slotId: string): SlotState | undefined {
+  return state.slots.find((s) => s.slotId === slotId)
 }
 
-/** 限界イベントカードを引く */
-export function getLimitEventCard(state: GameState, cardId: string): LimitEventCard | undefined {
-  return state.content.limitEvents.find((c) => c.id === cardId)
-}
-
-/** 要件カードを引く */
-export function getRequirementCard(state: GameState, cardId: string): RequirementCard | undefined {
-  return state.content.requirements.find((c) => c.id === cardId)
-}
-
-/** タスクの席の占有者(v3.0 ワーカーモード。seatIndex → playerId) */
-export function seatOccupants(state: GameState, taskTileId: string): Map<number, string> {
-  const map = new Map<number, string>()
-  for (const a of state.assignments) {
-    if (a.target.kind === 'seat' && a.target.taskTileId === taskTileId) {
-      map.set(a.target.seatIndex, a.playerId)
-    }
-  }
-  return map
-}
-
-/** タスクへの応援(support)人数(v3.0。🔥ぶんの追加工数) */
-export function supportCount(state: GameState, taskTileId: string): number {
-  return state.assignments.filter(
-    (a) => a.target.kind === 'support' && a.target.taskTileId === taskTileId,
-  ).length
-}
-
-/** タスクに関与している(席 or 応援)プレイヤーID(v3.0。重複なし) */
-export function taskWorkerIds(state: GameState, taskTileId: string): string[] {
-  const ids: string[] = []
-  for (const a of state.assignments) {
-    if (
-      (a.target.kind === 'seat' || a.target.kind === 'support') &&
-      a.target.taskTileId === taskTileId &&
-      !ids.includes(a.playerId)
-    ) {
-      ids.push(a.playerId)
-    }
-  }
-  return ids
+/** 盤上タスクの必要工数(基本 + 🔥 - 恒久減。差し込みは interruptEffort) */
+export function requiredCubes(state: GameState, task: BoardTask): number {
+  const base =
+    task.interruptEffort ?? getTaskCard(state.content, task.cardId)?.effort ?? 0
+  return Math.max(1, base + task.fire - task.effortReduction)
 }
 
 /** 1人のプレイヤーだけ差し替えた players 配列を返す */
@@ -95,18 +70,43 @@ export function updatePlayer(
   }
 }
 
-/**
- * クライアント QCD 重みを CS 基本増減量に適用する(RULES.md §3 暫定)
- * base は正の「大きさ」を渡す(符号は呼び出し側で管理)。
- */
-export function applyWeight(base: number, weight: number, mode: QcdWeightMode): number {
-  return mode === 'multiply' ? base * weight : base + weight
+/** 盤上のタスク1つだけ差し替えた board 配列を返す */
+export function updateBoardTask(
+  state: GameState,
+  cardId: string,
+  update: (task: BoardTask) => BoardTask,
+): GameState {
+  return {
+    ...state,
+    board: state.board.map((t) => (t.cardId === cardId ? update(t) : t)),
+  }
+}
+
+/** スロット1つだけ差し替えた slots 配列を返す */
+export function updateSlot(
+  state: GameState,
+  slotId: string,
+  update: (slot: SlotState) => SlotState,
+): GameState {
+  return {
+    ...state,
+    slots: state.slots.map((s) => (s.slotId === slotId ? update(s) : s)),
+  }
+}
+
+/** ログを1行追加する */
+export function addLog(state: GameState, message: string): GameState {
+  return {
+    ...state,
+    log: [...state.log, { phase: state.phase, week: state.week, message }],
+  }
 }
 
 /**
  * CS を増減する。csInstantLose が有効で CS が 0 未満になったら即時敗北にする。
  */
 export function changeCs(state: GameState, delta: number): GameState {
+  if (delta === 0) return state
   const cs = state.cs + delta
   const next = { ...state, cs }
   if (cs < 0 && state.config.csInstantLose && next.result === null) {
@@ -116,7 +116,6 @@ export function changeCs(state: GameState, delta: number): GameState {
       result: {
         outcome: 'lose',
         reason: 'CS トラックが 0 未満になったため、チームは敗北しました。',
-        personalResults: Object.fromEntries(state.players.map((p) => [p.id, false])),
       },
     }
   }
@@ -130,7 +129,7 @@ export function changeBudget(state: GameState, delta: number): GameState {
 
 /**
  * プレイヤーに疲労を加算する(上限 fatigueMax)。
- * 上限に到達したプレイヤーは限界イベント処理待ちキューに積む(RULES.md §4)。
+ * 上限到達者は限界イベント処理待ちキューに積む。
  */
 export function addFatigue(state: GameState, playerId: string, amount: number): GameState {
   const player = getPlayer(state, playerId)
@@ -141,12 +140,11 @@ export function addFatigue(state: GameState, playerId: string, amount: number): 
       fatigue: Math.max(0, p.fatigue + amount),
     }))
   }
-  const before = player.fatigue
-  const after = Math.min(state.config.fatigueMax, before + amount)
+  const after = Math.min(state.config.fatigueMax, player.fatigue + amount)
   let next = updatePlayer(state, playerId, (p) => ({ ...p, fatigue: after }))
   if (
     after >= state.config.fatigueMax &&
-    before < state.config.fatigueMax &&
+    player.fatigue < state.config.fatigueMax &&
     !next.pendingLimitPlayerIds.includes(playerId)
   ) {
     next = { ...next, pendingLimitPlayerIds: [...next.pendingLimitPlayerIds, playerId] }
@@ -163,43 +161,40 @@ export function addFatigueAll(state: GameState, amount: number): GameState {
   return next
 }
 
-/** イベントカードの効果列を適用する */
-export function applyEventEffects(state: GameState, effects: EventEffect[]): GameState {
+/**
+ * 検収条件の達成チェック:スロットが要求 Lv 以上・手戻りなしなら達成扱いにする。
+ * 納品・改修完了・手戻り解消のたびに呼ぶ。
+ */
+export function checkAcceptance(state: GameState): GameState {
   let next = state
-  for (const effect of effects) {
-    if (next.result !== null) return next
-    switch (effect.type) {
-      case 'BUDGET':
-        next = changeBudget(next, effect.amount)
-        break
-      case 'CS':
-        next = changeCs(next, effect.amount)
-        break
-      case 'FATIGUE_ALL':
-        next = addFatigueAll(next, effect.amount)
-        break
-      case 'NONE':
-        break
+  for (const id of next.openAcceptanceIds) {
+    if (next.metAcceptanceIds.includes(id)) continue
+    const card = getAcceptance(next.content, id)
+    if (!card) continue
+    const slot = getSlotState(next, card.slot)
+    if (slot && slot.level >= card.level && slot.reworkCubes === 0) {
+      next = {
+        ...next,
+        metAcceptanceIds: [...next.metAcceptanceIds, id],
+        commitments: next.commitments.filter((c) => c.acceptanceId !== id),
+      }
+      next = addLog(next, `✅ 検収条件「${card.name}」を達成しました。`)
     }
   }
   return next
 }
 
 /**
- * 限界イベント処理待ちがあれば、次の1件の限界イベントカードを引いて pendingEvent にセットする。
- * すでに別の解決待ちイベントがある場合は何もしない。
+ * 手戻りの再発:達成済み条件のスロットに手戻りが乗った場合、達成を取り消す。
+ * (手戻りイベントの適用後に呼ぶ)
  */
-export function maybeStartLimitEvent(state: GameState): GameState {
-  if (state.pendingEvent !== null || state.result !== null) return state
-  const [targetPlayerId, ...rest] = state.pendingLimitPlayerIds
-  if (targetPlayerId === undefined) return state
-  const { cardId, deck, rng } = drawCard(state.decks.limitEvents, state.rng)
-  if (cardId === null) return state
-  return {
-    ...state,
-    decks: { ...state.decks, limitEvents: deck },
-    rng,
-    pendingLimitPlayerIds: rest,
-    pendingEvent: { kind: 'limit', cardId, targetPlayerId },
-  }
+export function recheckMetAcceptance(state: GameState): GameState {
+  const stillMet = state.metAcceptanceIds.filter((id) => {
+    const card = getAcceptance(state.content, id)
+    if (!card) return true
+    const slot = getSlotState(state, card.slot)
+    return slot !== undefined && slot.level >= card.level && slot.reworkCubes === 0
+  })
+  if (stillMet.length === state.metAcceptanceIds.length) return state
+  return { ...state, metAcceptanceIds: stillMet }
 }
