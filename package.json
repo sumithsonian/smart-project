@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.33.4",
   "scripts": {
     "dev": "pnpm --filter @smart-project/web dev",
+    "build": "pnpm --filter @smart-project/web generate",
     "test": "pnpm --filter @smart-project/engine test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
