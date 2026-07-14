@@ -26,7 +26,7 @@ import { PLAYERS } from './util'
 // このプロジェクトの tsconfig は "types": [] (node/dom 型なし)なので、
 // 集計結果を確認するための console.log / console.table にだけ最小限の型を与える。
 declare global {
-  // eslint-disable-next-line no-var
+   
   const console: { log: (...args: unknown[]) => void; table: (...args: unknown[]) => void }
 }
 
