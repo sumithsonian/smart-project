@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * 解決待ちイベント(週初トラブル/限界イベント)の解決パネル。
+ * 解決待ちイベント(週初トラブル/限界イベント)のカード内容表示パネル。
  * pendingEvent があれば常に最優先で表示する(rules-v4-core.md §1-2・§0)。
+ * 「解決」操作は進行バー(TurnDirector)に一本化されているため、ここはカード表示専用。
  */
 import { computed } from 'vue'
 
-const { state, dispatch, eventCardOf, limitEventCardOf } = useGame()
+const { state, eventCardOf, limitEventCardOf } = useGame()
 
 const pending = computed(() => state.value.pendingEvent)
 const isLimit = computed(() => pending.value?.kind === 'limit')
@@ -16,10 +17,6 @@ const targetName = computed(() =>
 )
 const eventCard = computed(() => (pending.value && !isLimit.value ? eventCardOf(pending.value.cardId) : null))
 const limitCard = computed(() => (pending.value && isLimit.value ? limitEventCardOf(pending.value.cardId) : null))
-
-function resolve() {
-  dispatch({ type: 'RESOLVE_EVENT' })
-}
 </script>
 
 <template>
@@ -34,6 +31,6 @@ function resolve() {
       <p><strong>{{ limitCard.name }}</strong></p>
       <p class="muted">{{ limitCard.description }}</p>
     </template>
-    <button class="primary" @click="resolve">イベントを解決</button>
+    <p class="muted">解決は上部の進行バーの「イベントを解決」で行います。</p>
   </section>
 </template>

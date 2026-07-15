@@ -1,11 +1,14 @@
 <script setup lang="ts">
-/** メインボード:CS・予算・フェーズ/週トラック + プロジェクトシート情報 */
+/**
+ * メインボード:CS・予算の数値トラック + プロジェクトシート情報。
+ * フェーズ/週/ステップの表示は進行バー(TurnDirector)のステッパーに一本化されているため、
+ * ここでは重複を避けて数値トラックのみに絞る。
+ */
 import { computed } from 'vue'
 
-const { state, projectSheetOf, phaseNames, stepLabels } = useGame()
+const { state, projectSheetOf } = useGame()
 
 const sheet = computed(() => projectSheetOf(state.value.projectSheetId))
-const stepLabel = computed(() => stepLabels[state.value.step])
 const pmName = computed(() => state.value.players.find((p) => p.id === state.value.pmPlayerId)?.name)
 </script>
 
@@ -19,20 +22,6 @@ const pmName = computed(() => state.value.players.find((p) => p.id === state.val
       <div class="track" :class="{ danger: state.budget < 3 }">
         <span class="track-label">予算</span>
         <span class="track-value">{{ state.budget }}</span>
-      </div>
-      <div class="track">
-        <span class="track-label">フェーズ</span>
-        <span class="track-value">{{ state.phase }}<span class="muted">/{{ state.config.phases }}</span></span>
-      </div>
-      <div class="track">
-        <span class="track-label">週</span>
-        <span class="track-value">
-          {{ state.step === 'scope_meeting' ? '会議' : state.week }}<span class="muted">/{{ state.config.roundsPerPhase }}</span>
-        </span>
-      </div>
-      <div class="track step-badge">
-        <span class="track-label">{{ phaseNames[state.phase - 1] ?? '-' }}</span>
-        <span class="track-value">{{ stepLabel }}</span>
       </div>
     </div>
     <div class="board-info">

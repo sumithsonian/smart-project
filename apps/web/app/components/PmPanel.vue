@@ -2,6 +2,7 @@
 /**
  * PM 帽子の権限(rules-v4-core.md §3):交渉(猶予/取り下げ。フェーズ1回)・追加請求(フェーズ1回)。
  * 引き直し(redraw)はスコープ会議中のみのため ScopeMeetingPanel 側にある。
+ * 「週末を締める」(END_WEEKEND)操作は進行バー(TurnDirector)に一本化されている。
  */
 import { computed, ref } from 'vue'
 import type { NegotiationMode } from '@smart-project/engine'
@@ -32,9 +33,6 @@ function negotiate() {
 function extraBilling() {
   dispatch({ type: 'EXTRA_BILLING', playerId: state.value.pmPlayerId })
 }
-function endWeekend() {
-  dispatch({ type: 'END_WEEKEND', playerId: state.value.pmPlayerId })
-}
 </script>
 
 <template>
@@ -58,11 +56,6 @@ function endWeekend() {
       <button :disabled="extraBillingLeft <= 0" @click="extraBilling">
         💴 追加請求(予算+{{ state.config.extraBillingBudget }} / CS-{{ state.config.extraBillingCsCost }})
         <span class="muted">残{{ Math.max(0, extraBillingLeft) }}回</span>
-      </button>
-    </div>
-    <div v-if="state.step === 'weekend'" class="row">
-      <button class="primary" @click="endWeekend">
-        🏁 週末を締めて{{ state.week >= state.config.roundsPerPhase ? 'フェーズ終了へ' : '次週へ' }}
       </button>
     </div>
   </section>

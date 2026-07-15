@@ -9,6 +9,8 @@ const { state, started, lastViolation } = useGame()
       <h1>スマートプロジェクト <span class="muted">ホットシート(ステージ1・v4 工数モデル)</span></h1>
     </header>
 
+    <TurnDirector v-if="started" />
+
     <div v-if="lastViolation" class="violation">
       ⚠ {{ lastViolation.message }} <span class="muted">[{{ lastViolation.code }}]</span>
     </div>
@@ -295,11 +297,94 @@ input[type='number'] { width: 70px; }
 .result-box.win { background: #f0fdf4; border: 1px solid #86efac; }
 .result-box.lose { background: #fef2f2; border: 1px solid #fecaca; }
 
-/* ログ・違反 */
-.violation {
+/* 進行バー(TurnDirector) */
+.turn-director {
   position: sticky;
-  top: 8px;
-  z-index: 40;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(135deg, #0f766e 0%, #134e4a 100%);
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.turn-director--warn {
+  background: linear-gradient(135deg, #b45309 0%, #7c2d12 100%);
+}
+
+.td-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.td-stepper {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.td-phase {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+.td-phase.done { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.8); }
+.td-phase.current {
+  background: #facc15;
+  color: #713f12;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.td-phase-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.68rem;
+  flex-shrink: 0;
+}
+.td-phase.current .td-phase-num { background: rgba(0, 0, 0, 0.25); }
+.td-week { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #f0fdfa; }
+.td-week-status { font-weight: 700; background: rgba(255, 255, 255, 0.15); padding: 2px 8px; border-radius: 999px; }
+.td-week-dots { display: inline-flex; gap: 3px; }
+.td-week-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.6); background: transparent; }
+.td-week-dot.filled { background: #facc15; border-color: #facc15; }
+
+.td-guide { display: flex; flex-direction: column; gap: 2px; }
+.td-meaning { margin: 0; font-size: 0.86rem; line-height: 1.4; color: #f0fdfa; }
+.td-action-guide { margin: 0; font-size: 0.82rem; color: #ccfbf1; }
+
+.td-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.td-progress { font-size: 0.82rem; color: #f0fdfa; background: rgba(255, 255, 255, 0.1); padding: 3px 10px; border-radius: 999px; }
+.td-action { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.td-action button.primary { font-size: 0.92rem; padding: 6px 16px; }
+.td-blocked { color: #fef3c7; }
+
+/* ログ・違反(TurnDirector が sticky top:0 を占有するため、こちらは通常フロー配置にして衝突を避ける) */
+.violation {
   background: #fef2f2;
   border: 1px solid #fca5a5;
   color: #b91c1c;

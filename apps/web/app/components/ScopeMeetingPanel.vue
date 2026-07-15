@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * スコープ会議(rules-v4-core.md §1-1):タスク候補プール + WBS配置 + 会議を締める + PM交渉(引き直し)。
+ * スコープ会議(rules-v4-core.md §1-1):タスク候補プール + WBS配置 + PM交渉(引き直し)。
  * 検収条件の約束は AcceptanceBoard(常時表示)側のクリックで行う。
+ * 「会議を締める」(FINISH_SCOPE)操作は進行バー(TurnDirector)に一本化されている。
  */
 import { computed, ref } from 'vue'
 
@@ -45,15 +46,11 @@ function placeTask(cardId: string) {
   }
   dispatch({ type: 'PLACE_TASK', playerId: state.value.pmPlayerId, cardId })
 }
-
-function finishScope() {
-  dispatch({ type: 'FINISH_SCOPE', playerId: state.value.pmPlayerId })
-}
 </script>
 
 <template>
   <section class="panel">
-    <h2>スコープ会議 <span class="muted">検収条件の約束 → タスクをWBSに配置 → 会議を締める</span></h2>
+    <h2>スコープ会議 <span class="muted">検収条件の約束 → タスクをWBSに配置(締めは進行バーから)</span></h2>
 
     <div class="row">
       <button :disabled="negotiateDone" @click="toggleRedrawMode">
@@ -90,7 +87,5 @@ function finishScope() {
       <p v-if="pool.length === 0" class="muted">候補プールが空です。</p>
     </div>
     <p class="muted">カードをクリックで WBS レーンに配置(下の「WBSボード」に表示されます)。</p>
-
-    <button class="primary" style="margin-top: 10px" @click="finishScope">会議を締めて第1週へ</button>
   </section>
 </template>
