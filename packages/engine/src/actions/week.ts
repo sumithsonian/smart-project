@@ -73,7 +73,7 @@ function addFire(state: GameState, cardId: string): GameState {
     return next
   }
   let next = updateBoardTask(state, cardId, (t) => ({ ...t, fire: t.fire + 1 }))
-  next = addLog(next, `🔥 「${taskLabel(state, task)}」に炎上トークン(必要工数+1)`)
+  next = addLog(next, `🔥 「${taskLabel(state, task)}」に炎上トークン(必要人日+1)`)
   return next
 }
 

@@ -119,7 +119,7 @@ const progressText = computed(() => {
         ? `準備完了 ${readyCount.value}/${totalPlayers.value}(残り: ${notReadyNames.value.join('、')})`
         : `準備完了 ${readyCount.value}/${totalPlayers.value}`
     case 'weekend':
-      return `納品待ち(必要工数達成・未納品)${deliverableWaitingCount.value}件`
+      return `納品待ち(必要人日を消化済み・未納品)${deliverableWaitingCount.value}件`
     default:
       return null
   }

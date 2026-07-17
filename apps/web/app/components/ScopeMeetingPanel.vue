@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue'
 
-const { state, dispatch, taskCard, skillLabels, laneLabels } = useGame()
+const { state, dispatch, taskCard, laneLabels, skillColors, skillShortLabels } = useGame()
 
 const pool = computed(() => state.value.taskPool.map((id) => taskCard(id)).filter((c): c is NonNullable<typeof c> => !!c))
 
@@ -75,10 +75,20 @@ function placeTask(cardId: string) {
         @click="placeTask(c.id)"
       >
         <div class="tile-head"><strong>{{ c.name }}</strong></div>
+        <div class="tile-cost-row">
+          <span class="skill-chip" :style="{ background: skillColors[c.skill] }">{{ skillShortLabels[c.skill] }}</span>
+          <span class="pip-row" title="必要人日">
+            <span
+              v-for="i in c.effort"
+              :key="i"
+              class="pip filled"
+              :style="{ background: skillColors[c.skill], borderColor: skillColors[c.skill] }"
+            />
+          </span>
+          <span class="muted">必要{{ c.effort }}人日</span>
+        </div>
         <div class="tile-meta">
           <span class="badge">{{ laneLabels[c.lane] }}列</span>
-          <span class="badge skill">{{ skillLabels[c.skill].slice(0, 4) }}</span>
-          <span class="badge">工数{{ c.effort }}</span>
           <span class="badge">上限Lv{{ c.maxLevel }}</span>
           <span class="badge">😓{{ c.fatigue }}</span>
           <span class="badge">💰{{ c.cost }}</span>

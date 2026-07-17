@@ -51,6 +51,23 @@ export const SKILL_LABELS: Record<SkillKind, string> = {
   engineering: 'エンジニアリング',
 }
 
+/** スキル系統の短縮ラベル(チップ・pip 用) */
+export const SKILL_SHORT_LABELS: Record<SkillKind, string> = {
+  direction: 'ディ',
+  design: 'デザ',
+  engineering: 'エン',
+}
+
+/**
+ * スキル系統カラー(全UIで統一。人日ドット・系統チップ・pip に使う)
+ * ディレクション=アンバー / デザイン=ピンク / エンジニアリング=ブルー
+ */
+export const SKILL_COLORS: Record<SkillKind, string> = {
+  direction: '#f59e0b',
+  design: '#ec4899',
+  engineering: '#3b82f6',
+}
+
 /** 列(レーン)の日本語ラベル(差し込みレーン込み) */
 export const LANE_LABELS: Record<Lane | 'interrupt', string> = {
   start: '起点',
@@ -193,7 +210,7 @@ export function useGame() {
     switch (target.kind) {
       case 'task': {
         const t = boardTask(target.cardId)
-        return `${t ? displayTaskName(t) : target.cardId} — 座る`
+        return `${t ? displayTaskName(t) : target.cardId} — 担当する`
       }
       case 'slot': {
         const s = slotDef(target.slotId)
@@ -242,6 +259,8 @@ export function useGame() {
     assignmentOf,
     targetLabel,
     skillLabels: SKILL_LABELS,
+    skillShortLabels: SKILL_SHORT_LABELS,
+    skillColors: SKILL_COLORS,
     laneLabels: LANE_LABELS,
     phaseNames: PHASE_NAMES,
     stepLabels: STEP_LABELS,

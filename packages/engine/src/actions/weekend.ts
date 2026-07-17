@@ -168,7 +168,7 @@ export function handleDeliverTask(
   if (!task) return violation('NOT_FOUND', `盤上にないタスクです: ${action.cardId}`)
   const needed = requiredCubes(state, task)
   if (task.cubes < needed) {
-    return violation('CANNOT_DELIVER', `工数が足りません(${task.cubes}/${needed})。`)
+    return violation('CANNOT_DELIVER', `人日が足りません(残り${needed - task.cubes})。`)
   }
 
   // ── 差し込みの完了 ──

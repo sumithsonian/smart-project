@@ -14,9 +14,12 @@ const {
   memberCard,
   playerColor,
   skillLabels,
+  skillShortLabels,
+  skillColors,
   assignmentOf,
   targetLabel,
   boardTask,
+  taskCard,
   slotState,
 } = useGame()
 
@@ -38,6 +41,22 @@ const selectedTaskFire = computed(() => {
 })
 const selectedIsTask = computed(() => selectedTarget.value?.kind === 'task')
 const selectedIsSlot = computed(() => selectedTarget.value?.kind === 'slot')
+
+/** 選択中タスクに担当したときの見込み(「デザ → 2人日/週」)。差し込みは総合対応力=最高スキル */
+const assignPreview = computed<{ short: string; days: number } | null>(() => {
+  if (selectedTarget.value?.kind !== 'task') return null
+  const task = boardTask(selectedTarget.value.cardId)
+  if (!task) return null
+  if (task.interrupt) {
+    const best = (Object.keys(props.player.skills) as SkillKind[]).reduce((a, b) =>
+      props.player.skills[b] > props.player.skills[a] ? b : a,
+    )
+    return { short: '総合', days: props.player.skills[best] }
+  }
+  const card = taskCard(task.cardId)
+  if (!card) return null
+  return { short: skillShortLabels[card.skill], days: props.player.skills[card.skill] }
+})
 const canOvertime = computed(() => {
   if (!primary.value) return false
   if (props.player.fatigue >= state.value.config.noOvertimeAtFatigue) return false
@@ -132,9 +151,14 @@ const canPolish = computed(() => {
         {{ player.fatigue }}/{{ state.config.fatigueMax }}
       </span>
     </div>
-    <div class="player-skills muted">
-      <span v-for="(label, skill) in skillLabels" :key="skill">
-        {{ label.slice(0, 2) }} Lv{{ player.skills[skill] }}<template v-if="player.pendingLearn === skill"> (+1予定)</template>
+    <div class="player-skills">
+      <span v-for="(label, skill) in skillLabels" :key="skill" class="skill-line" :title="`${label}:1週に${player.skills[skill]}人日`">
+        <span class="skill-chip" :style="{ background: skillColors[skill] }">{{ skillShortLabels[skill] }}</span>
+        <span class="skill-pips">
+          <span v-for="i in player.skills[skill]" :key="i" class="skill-pip" :style="{ background: skillColors[skill] }" />
+          <span v-if="player.skills[skill] === 0" class="muted skill-none">—</span>
+        </span>
+        <span class="muted">{{ player.skills[skill] }}人日/週<template v-if="player.pendingLearn === skill">(+1予定)</template></span>
       </span>
     </div>
 
@@ -142,7 +166,7 @@ const canPolish = computed(() => {
     <div class="row">
       <span v-if="member?.ability === 'multitask'" class="badge">🔀マルチタスク(残業疲労なし・パッシブ)</span>
       <button v-else-if="member?.ability === 'expedite'" :disabled="abilityUsed || state.step !== 'standup'" @click="useExpedite">
-        ⚡段取り(今週+1キューブ)
+        ⚡段取り(今週+1人日)
       </button>
       <button v-else-if="member?.ability === 'polish'" :disabled="abilityUsed || !canPolish" @click="usePolish">
         💎磨き込み(選択スロットをLv2に)
@@ -152,13 +176,13 @@ const canPolish = computed(() => {
         :disabled="abilityUsed || !selectedIsTask || (state.step !== 'standup' && state.step !== 'weekend')"
         @click="useAutomate"
       >
-        🤖自動化(選択タスクの工数-1)
+        🤖自動化(選択タスクの人日-1)
       </button>
     </div>
 
     <div v-if="canAssign" class="player-actions worker-actions">
       <p v-if="!selectedIsTask && !selectedIsSlot" class="muted hint">
-        WBSボードでタスク、またはプロダクトボードでスロットをクリックして選択すると、座る/改修・手戻り/消火の対象になります。
+        WBSボードでタスク、またはプロダクトボードでスロットをクリックして選択すると、担当する/改修・手戻り/消火の対象になります。
       </p>
 
       <div class="assign-row">
@@ -168,7 +192,13 @@ const canPolish = computed(() => {
           <button @click="unassign(false)">取消</button>
         </template>
         <template v-else>
-          <button :disabled="!selectedIsTask" @click="assignSelectedTask(false)">座る</button>
+          <button
+            :disabled="!selectedIsTask"
+            :title="assignPreview ? `${player.name}:${assignPreview.short} → ${assignPreview.days}人日/週` : ''"
+            @click="assignSelectedTask(false)"
+          >
+            担当する<template v-if="assignPreview"> (+{{ assignPreview.days }}人日/週)</template>
+          </button>
           <button :disabled="!selectedIsSlot" @click="assignSelectedSlot">改修/手戻り対応</button>
           <button :disabled="!selectedIsTask || selectedTaskFire === 0" @click="assignExtinguish(false)">消火</button>
           <button @click="assignRest">休憩</button>
@@ -191,7 +221,7 @@ const canPolish = computed(() => {
           <span class="muted">{{ overtimeBlockedReason }}</span>
         </template>
         <template v-else>
-          <button :disabled="!selectedIsTask" @click="assignSelectedTask(true)">座る(残業)</button>
+          <button :disabled="!selectedIsTask" @click="assignSelectedTask(true)">担当する(残業)</button>
           <button :disabled="!selectedIsTask || selectedTaskFire === 0" @click="assignExtinguish(true)">消火(残業)</button>
         </template>
       </div>

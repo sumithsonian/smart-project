@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue'
 
-const { state, slotDef, skillLabels, selectedTarget, isSlotSelectable } = useGame()
+const { state, slotDef, skillColors, skillShortLabels, selectedTarget, isSlotSelectable } = useGame()
 
 const slots = computed(() => state.value.slots)
 
@@ -37,7 +37,10 @@ function select(slotId: string) {
         @click="select(s.slotId)"
       >
         <div class="slot-name">{{ slotDef(s.slotId)?.name ?? s.slotId }}</div>
-        <div class="slot-level">Lv{{ s.level }} <span class="muted">({{ skillLabels[slotDef(s.slotId)!.skill].slice(0, 2) }})</span></div>
+        <div class="slot-level">
+          Lv{{ s.level }}
+          <span class="skill-chip" :style="{ background: skillColors[slotDef(s.slotId)!.skill] }">{{ skillShortLabels[slotDef(s.slotId)!.skill] }}</span>
+        </div>
         <div class="slot-badges">
           <span v-if="s.reworkCubes > 0" class="badge warn">🔁手戻り {{ s.reworkCubes }}</span>
           <span v-if="s.level === 1 && s.upgradeCubes > 0" class="badge">

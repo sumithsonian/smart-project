@@ -21,9 +21,37 @@ const {
   playerName,
   selectedTarget,
   laneLabels,
+  skillColors,
+  skillShortLabels,
 } = useGame()
 
 const lanes: Array<Lane | 'interrupt'> = ['start', 'middle', 'finish', 'interrupt']
+
+/** 差し込みタスクの人日ドット色(系統なし=総合対応力) */
+const INTERRUPT_COLOR = '#64748b'
+
+/** タスクの系統カラー(通常タスクはカード系統、差し込みは中立色) */
+function taskColor(t: BoardTask): string {
+  if (!t.interrupt) {
+    const card = taskCard(t.cardId)
+    if (card) return skillColors[card.skill]
+  }
+  return INTERRUPT_COLOR
+}
+
+/** 人日ドット1個のスタイル(消化済み=系統カラー塗り / 🔥ぶん=赤 / 残り=空) */
+function dayDotStyle(t: BoardTask, i: number): Record<string, string> {
+  const needed = requiredCubesOf(t)
+  const isFire = t.fire > 0 && i > needed - t.fire
+  if (isFire) return {} // 🔥ドットは CSS(.burning)で赤表示
+  if (i <= t.cubes) return { background: taskColor(t), borderColor: taskColor(t) }
+  return {}
+}
+
+/** 残り人日(バーンダウン)。負にはしない */
+function remainingDays(t: BoardTask): number {
+  return Math.max(0, requiredCubesOf(t) - t.cubes)
+}
 
 const visibleLanes = computed(() =>
   lanes
@@ -78,25 +106,29 @@ function deliver(cardId: string) {
           </div>
 
           <div class="tile-cost-row">
-            <span class="pip-row" title="積まれた工数キューブ / 必要工数">
+            <span class="pip-row" title="消化済み(塗り)/ 残り(空)の人日バーンダウン。🔥ぶんは赤">
               <span
                 v-for="i in requiredCubesOf(t)"
                 :key="i"
                 class="pip"
                 :class="{ filled: i <= t.cubes, burning: t.fire > 0 && i > requiredCubesOf(t) - t.fire }"
+                :style="dayDotStyle(t, i)"
               />
             </span>
-            <span class="muted">{{ t.cubes }}/{{ requiredCubesOf(t) }}</span>
+            <span class="muted">残り{{ remainingDays(t) }}人日 / 必要{{ requiredCubesOf(t) }}人日</span>
           </div>
 
           <div class="tile-meta">
             <template v-if="!t.interrupt && taskCard(t.cardId)">
-              <span class="badge skill">{{ taskCard(t.cardId)!.skill.slice(0, 4) }}</span>
+              <span
+                class="skill-chip"
+                :style="{ background: skillColors[taskCard(t.cardId)!.skill] }"
+              >{{ skillShortLabels[taskCard(t.cardId)!.skill] }}</span>
               <span class="badge">上限Lv{{ taskCard(t.cardId)!.maxLevel }}</span>
               <span class="badge">💰{{ taskCard(t.cardId)!.cost }}</span>
               <span class="badge">😓{{ taskCard(t.cardId)!.fatigue }}</span>
             </template>
-            <span v-else class="badge interrupt">差し込み(工数{{ t.interruptEffort }})</span>
+            <span v-else class="badge interrupt">差し込み(人日{{ t.interruptEffort }})</span>
           </div>
 
           <div v-if="taskAssignees(t.cardId).length" class="tile-tokens">

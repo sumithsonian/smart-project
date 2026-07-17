@@ -14,7 +14,7 @@ describe('DELIVER_TASK', () => {
     state = allReady(state)
     const r = applyAction(state, { type: 'DELIVER_TASK', cardId: 't-req-light' })
     expect(isRuleViolation(r) && r.code).toBe('CANNOT_DELIVER')
-    expect((r as RuleViolation).message).toContain('工数')
+    expect((r as RuleViolation).message).toContain('人日')
   })
 
   it('予算不足はCANNOT_DELIVERになる', () => {

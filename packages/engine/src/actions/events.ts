@@ -123,7 +123,7 @@ function applyInterrupt(
     let next: GameState = { ...state, rng }
     next = updateSlot(next, slot.slotId, (s) => ({ ...s, reworkCubes: s.reworkCubes + amount }))
     const name = getSlotDef(next.content, slot.slotId)?.name ?? slot.slotId
-    next = addLog(next, `🔁 手戻り!【${name}】に手戻りキューブ${amount}個(解消まで検収上は未達)`)
+    next = addLog(next, `🔁 手戻り!【${name}】に手戻り人日${amount}(解消まで検収上は未達)`)
     return recheckMetAcceptance(next)
   }
   const cardId = `interrupt-${state.placementCounter + 1}`
@@ -149,7 +149,7 @@ function applyInterrupt(
   return addLog(
     next,
     kind === 'bug'
-      ? `🐛 バグ報告!対応タスク(工数${amount})が割り込み。放置するとフェーズ末ごとに CS-1`
-      : `💬 相談ごと(工数${amount})。対応すれば予算+${rewardBudget}。放置しても罰はない`,
+      ? `🐛 バグ報告!対応タスク(人日${amount})が割り込み。放置するとフェーズ末ごとに CS-1`
+      : `💬 相談ごと(人日${amount})。対応すれば予算+${rewardBudget}。放置しても罰はない`,
   )
 }

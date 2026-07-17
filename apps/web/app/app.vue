@@ -6,7 +6,7 @@ const { state, started, lastViolation } = useGame()
 <template>
   <div class="app">
     <header>
-      <h1>スマートプロジェクト <span class="muted">ホットシート(ステージ1・v4 工数モデル)</span></h1>
+      <h1>スマートプロジェクト <span class="muted">ホットシート(ステージ1・人日バーンダウン)</span></h1>
     </header>
 
     <TurnDirector v-if="started" />
@@ -248,6 +248,32 @@ input[type='number'] { width: 70px; }
 .badge.skill { background: #e0f2fe; color: #075985; }
 .badge.pm { background: #dbeafe; color: #1e40af; }
 .badge.interrupt { background: #fae8ff; color: #86198f; }
+
+/* 系統チップ(色で系統を示す。ディ=アンバー/デザ=ピンク/エン=ブルー) */
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+}
+
+/* 個人ボードのスキル(系統カラーの pip 主体) */
+.player-skills { flex-direction: column; align-items: stretch; gap: 4px; }
+.skill-line { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
+.skill-pips { display: inline-flex; gap: 3px; align-items: center; min-width: 0; flex: 1; flex-wrap: wrap; }
+.skill-pip { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2); }
+.skill-none { font-size: 0.8rem; }
+
+/* 系統カラー凡例 */
+.skill-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 0.78rem; color: #6b6455; }
+.skill-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.skill-legend-dot { width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2); }
 
 .deliverable { font-size: 0.7rem; font-weight: 700; border-radius: 4px; padding: 1px 6px; }
 .deliverable.lv1 { background: #e2e8f0; color: #334155; }

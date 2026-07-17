@@ -45,7 +45,7 @@ export function handleUseAbility(
       }
       let next = updatePlayer(state, player.id, (p) => ({ ...p, abilityUsedPhase: state.phase }))
       next = { ...next, expeditedPlayerIds: [...next.expeditedPlayerIds, player.id] }
-      return addLog(next, `⚡ ${player.name} の「段取り」:今週の積むキューブ+1`)
+      return addLog(next, `⚡ ${player.name} の「段取り」:今週の消化人日+1`)
     }
 
     case 'polish': {
@@ -84,7 +84,7 @@ export function handleUseAbility(
         ...t,
         effortReduction: t.effortReduction + 1,
       }))
-      return addLog(next, `🤖 ${player.name} の「自動化」:「${taskLabel(next, task)}」の必要工数-1`)
+      return addLog(next, `🤖 ${player.name} の「自動化」:「${taskLabel(next, task)}」の必要人日-1`)
     }
   }
 }

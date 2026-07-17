@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue'
 
-const { state, projectSheetOf } = useGame()
+const { state, projectSheetOf, skillLabels, skillColors } = useGame()
 
 const sheet = computed(() => projectSheetOf(state.value.projectSheetId))
 const pmName = computed(() => state.value.players.find((p) => p.id === state.value.pmPlayerId)?.name)
@@ -27,6 +27,12 @@ const pmName = computed(() => state.value.players.find((p) => p.id === state.val
     <div class="board-info">
       <span v-if="sheet">📦 {{ sheet.name }}<span class="muted"> {{ sheet.description }}</span></span>
       <span>👑 PM帽子:<strong>{{ pmName }}</strong></span>
+    </div>
+    <div class="skill-legend" title="系統カラー(全ボード共通)">
+      <span v-for="(label, skill) in skillLabels" :key="skill" class="skill-legend-item">
+        <span class="skill-legend-dot" :style="{ background: skillColors[skill] }" />
+        {{ label }}
+      </span>
     </div>
   </section>
 </template>
