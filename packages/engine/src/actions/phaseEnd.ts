@@ -4,7 +4,7 @@
 import type { GameState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
-import { addLog, changeCs, getAcceptance, getSlotState } from '../helpers'
+import { addLog, changeCs, getAcceptance, hasReworkCard, getSlotState } from '../helpers'
 import { openScopeMeeting } from './scope'
 
 /**
@@ -31,7 +31,16 @@ export function processPhaseEnd(state: GameState): GameState {
   }
   if (next.result !== null) return next
 
-  // ── 2. バグ放置の出血 ──
+  // ── 2. 相談ごとの期限切れ(自然消滅・罰なし。場にある間は枠を塞ぐだけ)──
+  const openConsults = next.board.filter((t) => t.interrupt === 'consult')
+  if (openConsults.length > 0) {
+    for (const consult of openConsults) {
+      next = addLog(next, `💨 相談ごと(人日${consult.interruptEffort})は期限切れ(自然消滅)`)
+    }
+    next = { ...next, board: next.board.filter((t) => t.interrupt !== 'consult') }
+  }
+
+  // ── 3. バグ放置の出血 ──
   const openBugs = next.board.filter((t) => t.interrupt === 'bug')
   for (const _bug of openBugs) {
     next = changeCs(next, -1)
@@ -39,7 +48,7 @@ export function processPhaseEnd(state: GameState): GameState {
     if (next.result !== null) return next
   }
 
-  // ── 3. 疲労の自然回復 ──
+  // ── 4. 疲労の自然回復 ──
   next = {
     ...next,
     players: next.players.map((p) => ({
@@ -66,7 +75,10 @@ export function handleAdvancePhase(state: GameState): GameState | RuleViolation 
       if (!card) continue
       const slot = getSlotState(next, card.slot)
       const compromised =
-        slot !== undefined && slot.level >= 1 && slot.reworkCubes === 0 && slot.level < card.level
+        slot !== undefined &&
+        slot.level >= 1 &&
+        !hasReworkCard(next, card.slot) &&
+        slot.level < card.level
       const penalty = compromised ? next.config.finalCompromiseCs : next.config.finalMissCs
       next = changeCs(next, -penalty)
       next = addLog(

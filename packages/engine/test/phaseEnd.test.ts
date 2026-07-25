@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
 import type { GameState } from '../src/types'
-import { drainPending, must, newGame } from './util'
+import { addBoardTask, drainPending, makeBoardTask, must, newGame } from './util'
 
 /**
  * 最終週の週末(処理直前)まで局面を直接捏造して END_WEEKEND を呼ぶ。
@@ -66,6 +66,42 @@ describe('フェーズ終了:約束の清算', () => {
     expect(
       state.commitments.some((c) => c.acceptanceId === 'ac-p1-reqs' && c.graceUntilPhase === 1),
     ).toBe(true)
+  })
+})
+
+describe('フェーズ終了:割り込みレーンの精算(rules-v4-core.md §1-2-1・§1-3)', () => {
+  it('consultは罰なしで消滅し、bugはCS-1、reworkは持ち越される', () => {
+    let state = newGame(74)
+    state = addBoardTask(
+      state,
+      makeBoardTask('interrupt-consult', {
+        lane: 'interrupt',
+        interrupt: 'consult',
+        interruptEffort: 2,
+        rewardBudget: 2,
+      }),
+    )
+    state = addBoardTask(
+      state,
+      makeBoardTask('interrupt-bug', { lane: 'interrupt', interrupt: 'bug', interruptEffort: 2 }),
+    )
+    state = addBoardTask(
+      state,
+      makeBoardTask('interrupt-rework', {
+        lane: 'interrupt',
+        interrupt: 'rework',
+        interruptEffort: 2,
+        targetSlotId: 'requirements',
+      }),
+    )
+    const csBefore = state.cs
+
+    state = forcePhaseEnd(state)
+    expect(state.step).toBe('phase_end')
+    expect(state.cs).toBe(csBefore - 1) // bug 1件のみ CS-1
+    expect(state.board.some((b) => b.cardId === 'interrupt-consult')).toBe(false) // 自然消滅
+    expect(state.board.some((b) => b.cardId === 'interrupt-bug')).toBe(true) // 出血しつつ残る
+    expect(state.board.some((b) => b.cardId === 'interrupt-rework')).toBe(true) // 持ち越し
   })
 })
 

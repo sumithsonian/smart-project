@@ -150,6 +150,7 @@ export function handlePlaceTask(
         lane: card.lane,
         interrupt: null,
         interruptEffort: null,
+        targetSlotId: null,
         rewardBudget: null,
         contributorIds: [],
         placedSeq: state.placementCounter + 1,

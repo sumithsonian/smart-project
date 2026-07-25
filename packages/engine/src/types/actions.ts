@@ -9,7 +9,7 @@ import type { SkillKind } from './content'
 export type WorkerTarget =
   /** 盤上のタスクに座る(自分のその系統スキルぶんキューブを積む) */
   | { kind: 'task'; cardId: string }
-  /** 納品済みスロットに座る(改修 or 手戻り対応。系統はスロット定義) */
+  /** 納品済み Lv1 スロットに座る(改修。系統はスロット定義。手戻り対応は割り込みレーンの task として行う) */
   | { kind: 'slot'; slotId: string }
   /** 学習(来週からスキル+1) */
   | { kind: 'learn'; skill: SkillKind }
@@ -88,5 +88,7 @@ export type GameAction =
     }
   /** 追加請求(PM。フェーズ1回。CS と引き換えに予算回復) */
   | { type: 'EXTRA_BILLING'; playerId: string }
+  /** PM 謝絶(回数無制限・いつでも):割り込みレーンのカード1枚を取り下げる */
+  | { type: 'DECLINE_INTERRUPT'; playerId: string; cardId: string }
   /** 個人能力の使用(フェーズ1回。行動枠を使わない) */
   | { type: 'USE_ABILITY'; playerId: string; cardId?: string; slotId?: string }

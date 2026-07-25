@@ -101,6 +101,7 @@ export function makeBoardTask(cardId: string, overrides: Partial<BoardTask> = {}
     lane: 'start',
     interrupt: null,
     interruptEffort: null,
+    targetSlotId: null,
     rewardBudget: null,
     contributorIds: [],
     placedSeq: 0,

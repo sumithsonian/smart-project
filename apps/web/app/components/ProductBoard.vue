@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
  * プロダクトボード(rules-v4-core.md §2):9スロットのグリッド。
- * Lv0/1/2 を色分けし、手戻りキューブ・改修進行を表示する。
- * 朝会中はクリックで「改修・手戻り対応」の配属対象として選択できる。
+ * Lv0/1/2 を色分けし、手戻り中(割り込みレーンのカード)・改修進行を表示する。
+ * 朝会中はクリックで「改修(Lv1のみ)」の配属対象として選択できる。
  */
 import { computed } from 'vue'
 
-const { state, slotDef, skillColors, skillShortLabels, selectedTarget, isSlotSelectable } = useGame()
+const { state, slotDef, skillColors, skillShortLabels, selectedTarget, isSlotSelectable, slotHasRework } =
+  useGame()
 
 const slots = computed(() => state.value.slots)
 
@@ -42,7 +43,7 @@ function select(slotId: string) {
           <span class="skill-chip" :style="{ background: skillColors[slotDef(s.slotId)!.skill] }">{{ skillShortLabels[slotDef(s.slotId)!.skill] }}</span>
         </div>
         <div class="slot-badges">
-          <span v-if="s.reworkCubes > 0" class="badge warn">🔁手戻り {{ s.reworkCubes }}</span>
+          <span v-if="slotHasRework(s.slotId)" class="badge warn">🔁手戻り対応中</span>
           <span v-if="s.level === 1 && s.upgradeCubes > 0" class="badge">
             🔧改修 {{ s.upgradeCubes }}/{{ state.config.upgradeCost }}
           </span>

@@ -103,7 +103,6 @@ export function handleSetupGame(
     slots: content.slots.map((s) => ({
       slotId: s.id,
       level: 0 as const,
-      reworkCubes: 0,
       upgradeCubes: 0,
       contributorIds: [],
     })),

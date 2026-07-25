@@ -17,7 +17,7 @@ describe('最終検収', () => {
       metAcceptanceIds: [],
       slots: state.slots.map((s) => {
         if (s.slotId === 'requirements') return { ...s, level: 0 as const } // 未達成
-        if (s.slotId === 'sitemap') return { ...s, level: 1 as const, reworkCubes: 0 } // Lv2要求をLv1で妥協
+        if (s.slotId === 'sitemap') return { ...s, level: 1 as const } // Lv2要求をLv1で妥協
         return s
       }),
     }

@@ -14,7 +14,6 @@ import {
   getSlotDef,
   recheckMetAcceptance,
   updatePlayer,
-  updateSlot,
 } from '../helpers'
 
 /**
@@ -106,29 +105,53 @@ export function handleResolveEvent(state: GameState): GameState | RuleViolation 
   return maybeStartLimitEvent(next)
 }
 
-/** 差し込みの適用(rework: 納品済みスロットへ / bug・consult: 割り込みレーンにタスク) */
+/** 差し込みの種類の日本語ラベル(ログ用) */
+function interruptLabel(kind: 'rework' | 'bug' | 'consult'): string {
+  if (kind === 'rework') return '手戻り'
+  if (kind === 'bug') return 'バグ報告'
+  return '相談ごと'
+}
+
+/**
+ * 差し込みの適用(rules-v4-core.md §1-2)。
+ * rework/bug/consult のすべてが「カードとして割り込みレーンに置かれる」形に統一されている。
+ * rework は納品済みスロットをシード乱数で1つ選び、そのスロットを指すカードになる
+ * (場にある間、対象スロットは検収上「未達」扱い。helpers.hasReworkCard で判定する)。
+ */
 function applyInterrupt(
   state: GameState,
   kind: 'rework' | 'bug' | 'consult',
   amount: number,
   rewardBudget: number,
 ): GameState {
+  let targetSlotId: string | null = null
+  let rng = state.rng
   if (kind === 'rework') {
     const delivered = state.slots.filter((s) => s.level > 0)
     if (delivered.length === 0) {
       return addLog(state, '💨 手戻り発生…のはずが、まだ何も納品していなかった(効果なし)')
     }
-    const [index, rng] = nextInt(state.rng, delivered.length)
-    const slot = delivered[index]!
-    let next: GameState = { ...state, rng }
-    next = updateSlot(next, slot.slotId, (s) => ({ ...s, reworkCubes: s.reworkCubes + amount }))
-    const name = getSlotDef(next.content, slot.slotId)?.name ?? slot.slotId
-    next = addLog(next, `🔁 手戻り!【${name}】に手戻り人日${amount}(解消まで検収上は未達)`)
-    return recheckMetAcceptance(next)
+    const [index, nextRng] = nextInt(state.rng, delivered.length)
+    targetSlotId = delivered[index]!.slotId
+    rng = nextRng
   }
+
+  // ── 割り込みレーンのキャパシティ(あふれ)──
+  const interruptCount = state.board.filter((t) => t.lane === 'interrupt').length
+  if (interruptCount >= state.config.interruptCapacity) {
+    let next: GameState = { ...state, rng }
+    next = changeCs(next, -next.config.overflowCs)
+    if (next.result !== null) return next
+    return addLog(
+      next,
+      `🌊 割り込みが受け止めきれずあふれた!(${interruptLabel(kind)}。CS-${next.config.overflowCs})`,
+    )
+  }
+
   const cardId = `interrupt-${state.placementCounter + 1}`
-  const next: GameState = {
+  let next: GameState = {
     ...state,
+    rng,
     board: [
       ...state.board,
       {
@@ -138,6 +161,7 @@ function applyInterrupt(
         lane: 'interrupt',
         interrupt: kind,
         interruptEffort: amount,
+        targetSlotId,
         rewardBudget: kind === 'consult' ? rewardBudget : null,
         contributorIds: [],
         placedSeq: state.placementCounter + 1,
@@ -145,6 +169,12 @@ function applyInterrupt(
       },
     ],
     placementCounter: state.placementCounter + 1,
+  }
+
+  if (kind === 'rework') {
+    const name = getSlotDef(next.content, targetSlotId!)?.name ?? targetSlotId
+    next = addLog(next, `🔁 手戻り!【${name}】に差し込みカード(人日${amount}。解消まで検収上は未達)`)
+    return recheckMetAcceptance(next)
   }
   return addLog(
     next,

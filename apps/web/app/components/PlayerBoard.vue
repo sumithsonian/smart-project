@@ -21,6 +21,7 @@ const {
   boardTask,
   taskCard,
   slotState,
+  slotHasRework,
 } = useGame()
 
 const member = computed(() => memberCard(props.player.memberId))
@@ -126,7 +127,7 @@ function useAutomate() {
 const canPolish = computed(() => {
   if (state.value.step !== 'weekend' || selectedTarget.value?.kind !== 'slot') return false
   const slot = slotState(selectedTarget.value.slotId)
-  return !!slot && slot.level === 1 && slot.reworkCubes === 0
+  return !!slot && slot.level === 1 && !slotHasRework(selectedTarget.value.slotId)
 })
 </script>
 
@@ -182,7 +183,7 @@ const canPolish = computed(() => {
 
     <div v-if="canAssign" class="player-actions worker-actions">
       <p v-if="!selectedIsTask && !selectedIsSlot" class="muted hint">
-        WBSボードでタスク、またはプロダクトボードでスロットをクリックして選択すると、担当する/改修・手戻り/消火の対象になります。
+        WBSボードでタスク、またはプロダクトボードでスロットをクリックして選択すると、担当する/改修/消火の対象になります(手戻り対応は割り込みレーンのタスクとして「担当する」)。
       </p>
 
       <div class="assign-row">
@@ -199,7 +200,7 @@ const canPolish = computed(() => {
           >
             担当する<template v-if="assignPreview"> (+{{ assignPreview.days }}人日/週)</template>
           </button>
-          <button :disabled="!selectedIsSlot" @click="assignSelectedSlot">改修/手戻り対応</button>
+          <button :disabled="!selectedIsSlot" @click="assignSelectedSlot">改修</button>
           <button :disabled="!selectedIsTask || selectedTaskFire === 0" @click="assignExtinguish(false)">消火</button>
           <button @click="assignRest">休憩</button>
           <span class="learn-group">

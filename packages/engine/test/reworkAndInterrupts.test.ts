@@ -1,8 +1,10 @@
 /**
- * 改修・手戻り、差し込み(rework/bug/consult)(rules-v4-core.md §0・§1-2-1)
+ * 改修・手戻り、差し込み(rework/bug/consult)、割り込みキャパシティ・謝絶(rules-v4-core.md §0・§1-2・§3)
  */
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
+import { hasReworkCard } from '../src/helpers'
+import { isRuleViolation } from '../src/types'
 import {
   addBoardTask,
   allReady,
@@ -14,28 +16,10 @@ import {
   withSlot,
 } from './util'
 
-describe('改修・手戻り', () => {
-  it('スロットに座ると手戻り解消が先、余りは改修に回る', () => {
+describe('改修(Lv1→Lv2)', () => {
+  it('スロットに座ると改修キューブが積まれ、upgradeCost到達でLv2になる', () => {
     let state = toStandup(newGame(40))
-    state = withSlot(state, 'requirements', { level: 1, reworkCubes: 1 })
-    state = must(
-      applyAction(state, {
-        type: 'ASSIGN_WORKER',
-        playerId: 'a', // direction 2
-        target: { kind: 'slot', slotId: 'requirements' },
-      }),
-    )
-    state = allReady(state)
-
-    const slot = state.slots.find((s) => s.slotId === 'requirements')!
-    expect(slot.reworkCubes).toBe(0) // 手戻り1個をキューブ2で解消
-    expect(slot.upgradeCubes).toBe(1) // 余り1が改修へ
-    expect(slot.level).toBe(1) // upgradeCost(3)未到達
-  })
-
-  it('upgradeCost到達で改修が完了しLv2になる', () => {
-    let state = toStandup(newGame(41))
-    state = withSlot(state, 'requirements', { level: 1, reworkCubes: 0, upgradeCubes: 1 })
+    state = withSlot(state, 'requirements', { level: 1, upgradeCubes: 1 })
     state = must(
       applyAction(state, {
         type: 'ASSIGN_WORKER',
@@ -50,7 +34,46 @@ describe('改修・手戻り', () => {
     expect(slot.upgradeCubes).toBe(0)
   })
 
-  it('手戻りが乗ると達成済みの検収条件が未達に戻る(recheck)', () => {
+  it('upgradeCost未到達では改修は進行中のまま', () => {
+    let state = toStandup(newGame(41))
+    state = withSlot(state, 'requirements', { level: 1, upgradeCubes: 0 })
+    state = must(
+      applyAction(state, {
+        type: 'ASSIGN_WORKER',
+        playerId: 'c', // direction 1 → upgradeCubes 0+1=1(upgradeCost 3未到達)
+        target: { kind: 'slot', slotId: 'requirements' },
+      }),
+    )
+    state = allReady(state)
+    const slot = state.slots.find((s) => s.slotId === 'requirements')!
+    expect(slot.level).toBe(1)
+    expect(slot.upgradeCubes).toBe(1)
+  })
+
+  it('スキル0の系統は改修に座れない(SKILL_ZERO)', () => {
+    let state = toStandup(newGame(46))
+    state = withSlot(state, 'requirements', { level: 1, upgradeCubes: 0 })
+    const r = applyAction(state, {
+      type: 'ASSIGN_WORKER',
+      playerId: 'd', // direction 0
+      target: { kind: 'slot', slotId: 'requirements' },
+    })
+    expect(isRuleViolation(r) && r.code).toBe('SKILL_ZERO')
+  })
+
+  it('Lv1以外のスロットには座れない(NOT_FOUND)', () => {
+    const state = toStandup(newGame(43))
+    const r = applyAction(state, {
+      type: 'ASSIGN_WORKER',
+      playerId: 'a',
+      target: { kind: 'slot', slotId: 'requirements' }, // まだ Lv0
+    })
+    expect(isRuleViolation(r) && r.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('手戻り(差し込みカードへの統一)', () => {
+  it('手戻りは納品済みスロットを指すカードとして割り込みレーンに置かれ、対象スロットは検収上「未達」になる', () => {
     let state = newGame(42)
     state = {
       ...state,
@@ -64,9 +87,159 @@ describe('改修・手戻り', () => {
     state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-rework-1', targetPlayerId: null } }
     const resolved = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
 
-    const slot = resolved.slots.find((s) => s.slotId === 'requirements')!
-    expect(slot.reworkCubes).toBe(2)
+    const reworkCard = resolved.board.find((b) => b.interrupt === 'rework')!
+    expect(reworkCard).toBeDefined()
+    expect(reworkCard.lane).toBe('interrupt')
+    expect(reworkCard.targetSlotId).toBe('requirements')
+    expect(reworkCard.interruptEffort).toBe(2)
+    expect(hasReworkCard(resolved, 'requirements')).toBe(true)
+    // 対象スロットのLvは変わらないが、検収上は未達に戻る
+    expect(resolved.slots.find((s) => s.slotId === 'requirements')!.level).toBe(1)
     expect(resolved.metAcceptanceIds).not.toContain('ac-p1-reqs')
+  })
+
+  it('手戻りカードに人日を積み切ると解消し、検収条件が復帰する', () => {
+    let state = newGame(44)
+    state = {
+      ...state,
+      slots: state.slots.map((s) => (s.slotId === 'requirements' ? { ...s, level: 1 } : s)),
+      metAcceptanceIds: ['ac-p1-reqs'],
+    }
+    state = must(applyAction(state, { type: 'FINISH_SCOPE', playerId: 'a' }))
+    state = drainPending(state)
+    state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-rework-1', targetPlayerId: null } }
+    state = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
+    const reworkCard = state.board.find((b) => b.interrupt === 'rework')!
+
+    // 'a'(最高スキル direction2)が担当すればちょうど effort2 が埋まる
+    state = must(
+      applyAction(state, {
+        type: 'ASSIGN_WORKER',
+        playerId: 'a',
+        target: { kind: 'task', cardId: reworkCard.cardId },
+      }),
+    )
+    state = allReady(state)
+    expect(state.step).toBe('weekend')
+
+    const delivered = must(applyAction(state, { type: 'DELIVER_TASK', cardId: reworkCard.cardId }))
+    expect(delivered.board.some((b) => b.cardId === reworkCard.cardId)).toBe(false)
+    expect(hasReworkCard(delivered, 'requirements')).toBe(false)
+    expect(delivered.metAcceptanceIds).toContain('ac-p1-reqs')
+  })
+
+  it('納品済みスロットが1つもなければ効果なし', () => {
+    let state = newGame(45)
+    state = must(applyAction(state, { type: 'FINISH_SCOPE', playerId: 'a' }))
+    state = drainPending(state)
+    state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-rework-1', targetPlayerId: null } }
+    const resolved = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
+    expect(resolved.board.some((b) => b.interrupt === 'rework')).toBe(false)
+  })
+})
+
+describe('割り込みレーンのキャパシティ(あふれ)', () => {
+  it('割り込みレーンが満杯のとき新規差し込みはCS-overflowCsであふれ、カードは置かれない', () => {
+    let state = newGame(47)
+    state = must(applyAction(state, { type: 'FINISH_SCOPE', playerId: 'a' }))
+    state = drainPending(state)
+    for (let i = 0; i < state.config.interruptCapacity; i++) {
+      state = addBoardTask(
+        state,
+        makeBoardTask(`interrupt-fill-${i}`, { lane: 'interrupt', interrupt: 'bug', interruptEffort: 2 }),
+      )
+    }
+    const csBefore = state.cs
+    const boardCountBefore = state.board.length
+
+    state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-bug-1', targetPlayerId: null } }
+    const resolved = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
+
+    expect(resolved.cs).toBe(csBefore - resolved.config.overflowCs)
+    expect(resolved.board).toHaveLength(boardCountBefore) // 新規カードは置かれない
+  })
+
+  it('手戻りがあふれた場合もカードは置かれず、スロットは無事(Lvは変わらない)', () => {
+    let state = newGame(48)
+    state = must(applyAction(state, { type: 'FINISH_SCOPE', playerId: 'a' }))
+    state = drainPending(state)
+    state = withSlot(state, 'requirements', { level: 1 })
+    for (let i = 0; i < state.config.interruptCapacity; i++) {
+      state = addBoardTask(
+        state,
+        makeBoardTask(`interrupt-fill-${i}`, { lane: 'interrupt', interrupt: 'bug', interruptEffort: 2 }),
+      )
+    }
+    const csBefore = state.cs
+
+    state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-rework-1', targetPlayerId: null } }
+    const resolved = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
+
+    expect(resolved.cs).toBe(csBefore - resolved.config.overflowCs)
+    expect(resolved.board.some((b) => b.interrupt === 'rework')).toBe(false)
+    expect(resolved.slots.find((s) => s.slotId === 'requirements')!.level).toBe(1)
+  })
+})
+
+describe('DECLINE_INTERRUPT(PM謝絶)', () => {
+  it('PM以外は謝絶できない(NOT_PM)', () => {
+    let state = toStandup(newGame(56))
+    state = addBoardTask(
+      state,
+      makeBoardTask('interrupt-y', { lane: 'interrupt', interrupt: 'bug', interruptEffort: 2 }),
+    )
+    const r = applyAction(state, { type: 'DECLINE_INTERRUPT', playerId: 'b', cardId: 'interrupt-y' })
+    expect(isRuleViolation(r) && r.code).toBe('NOT_PM')
+  })
+
+  it('割り込みレーンにないカードはNOT_FOUND', () => {
+    const state = toStandup(newGame(57))
+    const r = applyAction(state, { type: 'DECLINE_INTERRUPT', playerId: 'a', cardId: 'no-such-card' })
+    expect(isRuleViolation(r) && r.code).toBe('NOT_FOUND')
+  })
+
+  it('PMは割り込みカード1枚をCS-declineCsで除去できる(回数無制限)', () => {
+    let state = toStandup(newGame(58))
+    state = addBoardTask(
+      state,
+      makeBoardTask('interrupt-y', { lane: 'interrupt', interrupt: 'bug', interruptEffort: 2 }),
+    )
+    const csBefore = state.cs
+    const s = must(
+      applyAction(state, { type: 'DECLINE_INTERRUPT', playerId: 'a', cardId: 'interrupt-y' }),
+    )
+    expect(s.cs).toBe(csBefore - s.config.declineCs)
+    expect(s.board.some((b) => b.cardId === 'interrupt-y')).toBe(false)
+
+    // 続けて別カードを謝絶しても回数制限にかからない
+    let s2 = addBoardTask(
+      s,
+      makeBoardTask('interrupt-z', { lane: 'interrupt', interrupt: 'consult', interruptEffort: 2, rewardBudget: 2 }),
+    )
+    s2 = must(applyAction(s2, { type: 'DECLINE_INTERRUPT', playerId: 'a', cardId: 'interrupt-z' }))
+    expect(s2.cs).toBe(s.cs - s2.config.declineCs)
+  })
+
+  it('手戻りカードを謝絶すると検収が復帰する', () => {
+    let state = newGame(59)
+    state = {
+      ...state,
+      slots: state.slots.map((s) => (s.slotId === 'requirements' ? { ...s, level: 1 } : s)),
+      metAcceptanceIds: ['ac-p1-reqs'],
+    }
+    state = must(applyAction(state, { type: 'FINISH_SCOPE', playerId: 'a' }))
+    state = drainPending(state)
+    state = { ...state, pendingEvent: { kind: 'week_start', cardId: 'ev-rework-1', targetPlayerId: null } }
+    state = must(applyAction(state, { type: 'RESOLVE_EVENT' }))
+    expect(state.metAcceptanceIds).not.toContain('ac-p1-reqs')
+    const reworkCard = state.board.find((b) => b.interrupt === 'rework')!
+
+    const declined = must(
+      applyAction(state, { type: 'DECLINE_INTERRUPT', playerId: 'a', cardId: reworkCard.cardId }),
+    )
+    expect(declined.board.some((b) => b.interrupt === 'rework')).toBe(false)
+    expect(hasReworkCard(declined, 'requirements')).toBe(false)
+    expect(declined.metAcceptanceIds).toContain('ac-p1-reqs')
   })
 })
 

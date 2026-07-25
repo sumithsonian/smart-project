@@ -203,12 +203,10 @@ function validateTarget(
       return null
     }
     case 'slot': {
+      // 手戻りはカード化されたため、スロットに座れるのは Lv1 の改修のみ
       const slot = getSlotState(state, target.slotId)
-      if (!slot || slot.level === 0) {
-        return violation('NOT_FOUND', '納品済みのスロットではありません(改修・手戻り対応は納品後)。')
-      }
-      if (slot.reworkCubes === 0 && slot.level >= 2) {
-        return violation('INVALID_TARGET', 'このスロットに積む理由がありません(手戻りなし・Lv2)。')
+      if (!slot || slot.level !== 1) {
+        return violation('NOT_FOUND', 'Lv1 で納品済みのスロットではありません(改修は納品後の Lv1 のみ)。')
       }
       const def = getSlotDef(state.content, target.slotId)!
       if (player.skills[def.skill] < 1) {

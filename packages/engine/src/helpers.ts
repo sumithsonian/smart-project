@@ -51,6 +51,14 @@ export function getSlotState(state: GameState, slotId: string): SlotState | unde
   return state.slots.find((s) => s.slotId === slotId)
 }
 
+/**
+ * 指定スロットを対象とする手戻りカードが場(割り込みレーン)にあるか。
+ * ある間、そのスロットは検収上「未達」扱い(rules-v4-core.md §1-2)。
+ */
+export function hasReworkCard(state: GameState, slotId: string): boolean {
+  return state.board.some((t) => t.interrupt === 'rework' && t.targetSlotId === slotId)
+}
+
 /** 盤上タスクの必要工数(基本 + 🔥 - 恒久減。差し込みは interruptEffort) */
 export function requiredCubes(state: GameState, task: BoardTask): number {
   const base =
@@ -172,7 +180,7 @@ export function checkAcceptance(state: GameState): GameState {
     const card = getAcceptance(next.content, id)
     if (!card) continue
     const slot = getSlotState(next, card.slot)
-    if (slot && slot.level >= card.level && slot.reworkCubes === 0) {
+    if (slot && slot.level >= card.level && !hasReworkCard(next, card.slot)) {
       next = {
         ...next,
         metAcceptanceIds: [...next.metAcceptanceIds, id],
@@ -193,7 +201,7 @@ export function recheckMetAcceptance(state: GameState): GameState {
     const card = getAcceptance(state.content, id)
     if (!card) return true
     const slot = getSlotState(state, card.slot)
-    return slot !== undefined && slot.level >= card.level && slot.reworkCubes === 0
+    return slot !== undefined && slot.level >= card.level && !hasReworkCard(state, card.slot)
   })
   if (stillMet.length === state.metAcceptanceIds.length) return state
   return { ...state, metAcceptanceIds: stillMet }

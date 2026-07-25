@@ -161,8 +161,12 @@ export function useGame() {
   function slotState(slotId: string): SlotState | undefined {
     return state.value.slots.find((s) => s.slotId === slotId)
   }
-  /** 差し込み(bug/consult)込みのタスク表示名(手戻りは盤上タスクにならない) */
+  /** 差し込み(rework/bug/consult)込みのタスク表示名 */
   function displayTaskName(task: BoardTask): string {
+    if (task.interrupt === 'rework') {
+      const name = task.targetSlotId ? slotDef(task.targetSlotId)?.name ?? task.targetSlotId : ''
+      return `🔁 手戻り対応(${name})`
+    }
     if (task.interrupt === 'bug') return '🐛 バグ対応'
     if (task.interrupt === 'consult') return '💬 相談ごと'
     return taskLabel(state.value, task)
@@ -188,12 +192,14 @@ export function useGame() {
   function boardByLane(lane: Lane | 'interrupt'): BoardTask[] {
     return state.value.board.filter((t) => t.lane === lane).sort((a, b) => a.placedSeq - b.placedSeq)
   }
-  /** スロットが標準(kind:'slot')の配属対象として選択可能か(改修・手戻り対応) */
+  /** 指定スロットを対象とする手戻りカードが割り込みレーンにあるか(場にある間は検収上「未達」) */
+  function slotHasRework(slotId: string): boolean {
+    return state.value.board.some((t) => t.interrupt === 'rework' && t.targetSlotId === slotId)
+  }
+  /** スロットが標準(kind:'slot')の配属対象として選択可能か(改修は Lv1 のみ。手戻り対応は割り込みレーンの task) */
   function isSlotSelectable(slotId: string): boolean {
     const slot = slotState(slotId)
-    if (!slot || slot.level === 0) return false
-    if (slot.reworkCubes === 0 && slot.level >= 2) return false
-    return true
+    return !!slot && slot.level === 1
   }
 
   // ── 検収条件・約束 ──
@@ -214,7 +220,7 @@ export function useGame() {
       }
       case 'slot': {
         const s = slotDef(target.slotId)
-        return `${s?.name ?? target.slotId} — 改修/手戻り`
+        return `${s?.name ?? target.slotId} — 改修`
       }
       case 'learn':
         return `学習(${SKILL_LABELS[target.skill]})`
@@ -255,6 +261,7 @@ export function useGame() {
     taskAssignees,
     boardByLane,
     isSlotSelectable,
+    slotHasRework,
     commitmentOf,
     assignmentOf,
     targetLabel,

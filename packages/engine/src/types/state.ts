@@ -47,6 +47,8 @@ export interface BoardTask {
   interrupt: InterruptKind | null
   /** 差し込みの必要工数(通常タスクはカード定義を使うため null) */
   interruptEffort: number | null
+  /** 手戻りの対象スロット(rework のみ。他は null) */
+  targetSlotId: string | null
   /** 相談ごとの報酬予算(consult のみ) */
   rewardBudget: number | null
   /** キューブを積んだことのあるプレイヤーID(納品時の参加者記録) */
@@ -63,8 +65,6 @@ export interface SlotState {
   slotId: string
   /** 現在のレベル(0 = 未納品) */
   level: 0 | DeliverableLevel
-  /** 手戻りキューブ(乗っている間、検収上は未達扱い) */
-  reworkCubes: number
   /** 改修の進行キューブ(upgradeCost 到達で Lv2 化) */
   upgradeCubes: number
   /** 納品・改修に関与したプレイヤーID */

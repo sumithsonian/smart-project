@@ -11,7 +11,7 @@ export type { PlayerView, DeckView } from './redact'
 export { createInitialState } from './initialState'
 export { nextRandom, nextInt, shuffle } from './rng'
 export { buildDeck, drawCard, discard } from './deck'
-export { requiredCubes, checkAcceptance } from './helpers'
+export { requiredCubes, checkAcceptance, hasReworkCard } from './helpers'
 export { taskLabel } from './actions/week'
 
 export const ENGINE_VERSION = '0.4.0'

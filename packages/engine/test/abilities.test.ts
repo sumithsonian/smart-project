@@ -69,7 +69,7 @@ describe('expedite(段取り)', () => {
 describe('polish(磨き込み)', () => {
   it('週末に納品済みLv1スロットをLv2にできる(対象不正はNG)', () => {
     let state = toStandup(newGame(101))
-    state = withSlot(state, 'sitemap', { level: 1, reworkCubes: 0 })
+    state = withSlot(state, 'sitemap', { level: 1 })
     state = allReady(state) // 何もせず週末へ
 
     // 対象不正:Lv0のスロット

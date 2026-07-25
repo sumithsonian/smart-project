@@ -5,7 +5,7 @@ import type { GameAction } from '../types/actions'
 import type { GameState } from '../types/state'
 import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
-import { addLog, changeBudget, changeCs, getAcceptance } from '../helpers'
+import { addLog, changeBudget, changeCs, checkAcceptance, getAcceptance, getBoardTask } from '../helpers'
 import { guardPm, refillTaskPool } from './scope'
 
 /** NEGOTIATE — PM 交渉(フェーズ1回。猶予/取り下げ/引き直し) */
@@ -99,4 +99,54 @@ export function handleExtraBilling(
     next,
     `💴 追加請求(予算+${next.config.extraBillingBudget} / CS-${next.config.extraBillingCsCost})`,
   )
+}
+
+/** 差し込みの種類の日本語ラベル(謝絶ログ用) */
+function interruptLabel(kind: 'rework' | 'bug' | 'consult'): string {
+  if (kind === 'rework') return '手戻り'
+  if (kind === 'bug') return 'バグ報告'
+  return '相談ごと'
+}
+
+/**
+ * DECLINE_INTERRUPT — PM 謝絶(rules-v4-core.md §3)。
+ * 割り込みレーンのカード1枚を取り下げる。回数無制限・いつでも可(pendingEvent 中は不可)。
+ * 積んだキューブは失われ、即時 CS-declineCs。rework 謝絶時はスロットの検収が復帰しうる。
+ */
+export function handleDeclineInterrupt(
+  state: GameState,
+  action: Extract<GameAction, { type: 'DECLINE_INTERRUPT' }>,
+): GameState | RuleViolation {
+  const guard = guardPm(state, action.playerId)
+  if (guard) return guard
+  if (state.pendingEvent !== null) {
+    return violation('PENDING_EVENT', '先にイベントを解決してください。')
+  }
+  const task = getBoardTask(state, action.cardId)
+  if (!task || task.lane !== 'interrupt' || !task.interrupt) {
+    return violation('NOT_FOUND', `割り込みレーンにないカードです: ${action.cardId}`)
+  }
+
+  let next: GameState = {
+    ...state,
+    board: state.board.filter((t) => t.cardId !== action.cardId),
+    // 朝会中に謝絶した場合、配属済みのアサインも除去する
+    assignments: state.assignments.filter(
+      (a) =>
+        !(
+          (a.target.kind === 'task' || a.target.kind === 'extinguish') &&
+          a.target.cardId === action.cardId
+        ),
+    ),
+  }
+  next = changeCs(next, -next.config.declineCs)
+  if (next.result !== null) return next
+  next = addLog(
+    next,
+    `🙇 謝絶:「${interruptLabel(task.interrupt)}(人日${task.interruptEffort})」を丁重にお断り(CS-${next.config.declineCs})`,
+  )
+  if (task.interrupt === 'rework') {
+    next = checkAcceptance(next)
+  }
+  return next
 }

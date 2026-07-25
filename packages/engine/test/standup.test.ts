@@ -11,7 +11,7 @@ describe('朝会:ASSIGN_WORKER の正常系', () => {
     let state = toStandup(newGame(10))
     // 局面捏造:盤上タスク(🔥1付き)と、納品済み・手戻り中のスロットを用意する
     state = addBoardTask(state, makeBoardTask('t-req-light', { fire: 1 }))
-    state = withSlot(state, 'sitemap', { level: 1, reworkCubes: 1 })
+    state = withSlot(state, 'sitemap', { level: 1 })
 
     // task(direction スキルを持つ 'a' が座る)
     let s = must(
@@ -30,7 +30,7 @@ describe('朝会:ASSIGN_WORKER の正常系', () => {
         overtime: true,
       }),
     )
-    // slot(改修・手戻り対応。direction スキルを持つ 'b' が座る)
+    // slot(改修。direction スキルを持つ 'b' が座る)
     s = must(
       applyAction(s, {
         type: 'ASSIGN_WORKER',

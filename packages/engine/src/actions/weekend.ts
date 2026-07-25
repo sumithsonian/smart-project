@@ -109,25 +109,18 @@ export function processWeekend(state: GameState): GameState {
           : [...t.contributorIds, a.playerId],
       }))
     } else if (a.target.kind === 'slot') {
+      // 手戻りはカード化されたため、スロットに座るのは改修(Lv1→Lv2)のみ
       const slotId = a.target.slotId
       const def = getSlotDef(next.content, slotId)!
       const cubes = cubesFor(next, a.playerId, () => def.skill, expediteConsumed)
-      const slot = getSlotState(next, slotId)!
-      // 手戻りキューブの解消が先。余りは改修(Lv1のみ)に積む
-      const toRework = Math.min(slot.reworkCubes, cubes)
-      const toUpgrade = slot.level === 1 ? cubes - toRework : 0
       next = updateSlot(next, slotId, (s) => ({
         ...s,
-        reworkCubes: s.reworkCubes - toRework,
-        upgradeCubes: s.upgradeCubes + toUpgrade,
+        upgradeCubes: s.upgradeCubes + cubes,
         contributorIds: s.contributorIds.includes(a.playerId)
           ? s.contributorIds
           : [...s.contributorIds, a.playerId],
       }))
       const after = getSlotState(next, slotId)!
-      if (toRework > 0 && after.reworkCubes === 0) {
-        next = addLog(next, `🔧 「${def.name}」の手戻りを解消`)
-      }
       // 改修完了:upgradeCost 到達で Lv2
       if (after.level === 1 && after.upgradeCubes >= next.config.upgradeCost) {
         next = updateSlot(next, slotId, (s) => ({ ...s, level: 2, upgradeCubes: 0 }))
@@ -176,6 +169,11 @@ export function handleDeliverTask(
     let next: GameState = { ...state, board: state.board.filter((t) => t.cardId !== task.cardId) }
     if (task.interrupt === 'bug') {
       next = addLog(next, '🐛 バグ対応を完了(CS の出血が止まった)')
+    } else if (task.interrupt === 'rework') {
+      const slotId = task.targetSlotId!
+      const name = getSlotDef(next.content, slotId)?.name ?? slotId
+      next = addLog(next, `🔁 解消:「${name}」の手戻りに対応完了(検収が復帰)`)
+      next = checkAcceptance(next)
     } else {
       next = changeBudget(next, task.rewardBudget ?? 0)
       next = addLog(next, `💬 相談ごとに対応(予算+${task.rewardBudget ?? 0})`)

@@ -12,7 +12,7 @@ import { handleAssignWorker, handleDeclareReady, handleUnassignWorker } from './
 import { handleDeliverTask, handleEndWeekend } from './actions/weekend'
 import { handleResolveEvent } from './actions/events'
 import { handleAdvancePhase } from './actions/phaseEnd'
-import { handleExtraBilling, handleNegotiate } from './actions/pm'
+import { handleDeclineInterrupt, handleExtraBilling, handleNegotiate } from './actions/pm'
 import { handleUseAbility } from './actions/abilities'
 
 export function applyAction(state: GameState, action: GameAction): GameState | RuleViolation {
@@ -46,6 +46,8 @@ export function applyAction(state: GameState, action: GameAction): GameState | R
       return handleNegotiate(state, action)
     case 'EXTRA_BILLING':
       return handleExtraBilling(state, action)
+    case 'DECLINE_INTERRUPT':
+      return handleDeclineInterrupt(state, action)
     case 'USE_ABILITY':
       return handleUseAbility(state, action)
     default: {

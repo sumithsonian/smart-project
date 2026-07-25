@@ -14,6 +14,7 @@ import {
   getPlayer,
   getSlotDef,
   getSlotState,
+  hasReworkCard,
   updateBoardTask,
   updatePlayer,
   updateSlot,
@@ -55,7 +56,7 @@ export function handleUseAbility(
       }
       if (!action.slotId) return violation('INVALID_TARGET', '対象スロットを指定してください。')
       const slot = getSlotState(state, action.slotId)
-      if (!slot || slot.level !== 1 || slot.reworkCubes > 0) {
+      if (!slot || slot.level !== 1 || hasReworkCard(state, action.slotId)) {
         return violation('INVALID_TARGET', 'Lv1 で手戻りのないスロットだけ磨き込めます。')
       }
       let next = updatePlayer(state, player.id, (p) => ({ ...p, abilityUsedPhase: state.phase }))

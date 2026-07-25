@@ -55,6 +55,12 @@ export interface GameConfig {
   extraBillingPerPhase: number
   /** CS が 0 未満になった時点で即時敗北するか */
   csInstantLose: boolean
+  /** 割り込みレーンの枠数 */
+  interruptCapacity: number
+  /** あふれ1件の CS ペナルティ */
+  overflowCs: number
+  /** 謝絶1件の CS ペナルティ */
+  declineCs: number
 }
 
 /** rules-v4-core.md §6 の初期値 */
@@ -84,4 +90,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   extraBillingCsCost: 1,
   extraBillingPerPhase: 1,
   csInstantLose: true,
+  interruptCapacity: 4,
+  overflowCs: 2,
+  declineCs: 1,
 }
