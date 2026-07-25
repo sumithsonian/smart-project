@@ -211,6 +211,26 @@ export function useGame() {
   function assignmentOf(playerId: string, overtime: boolean): WeekAssignment | undefined {
     return state.value.assignments.find((a) => a.playerId === playerId && a.overtime === overtime)
   }
+  /** 同一の配属先(WorkerTarget)かどうか */
+  function sameWorkerTarget(a: WorkerTarget, b: WorkerTarget): boolean {
+    if (a.kind !== b.kind) return false
+    switch (a.kind) {
+      case 'task':
+        return b.kind === 'task' && a.cardId === b.cardId
+      case 'slot':
+        return b.kind === 'slot' && a.slotId === b.slotId
+      case 'extinguish':
+        return b.kind === 'extinguish' && a.cardId === b.cardId
+      case 'learn':
+        return b.kind === 'learn' && a.skill === b.skill
+      case 'rest':
+        return true
+    }
+  }
+  /** 指定の配属先(タスク/スロット/休憩/学習)に今週配属されているプレイヤー一覧(卓面のミープル表示用) */
+  function assignmentsForTarget(target: WorkerTarget): WeekAssignment[] {
+    return state.value.assignments.filter((a) => sameWorkerTarget(a.target, target))
+  }
   /** 配属先の表示ラベル */
   function targetLabel(target: WorkerTarget): string {
     switch (target.kind) {
@@ -264,6 +284,7 @@ export function useGame() {
     slotHasRework,
     commitmentOf,
     assignmentOf,
+    assignmentsForTarget,
     targetLabel,
     skillLabels: SKILL_LABELS,
     skillShortLabels: SKILL_SHORT_LABELS,

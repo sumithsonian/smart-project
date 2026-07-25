@@ -78,9 +78,11 @@ function start() {
 </script>
 
 <template>
-  <section class="panel">
-    <h2>ゲーム設定</h2>
-    <div class="setup-grid">
+  <div class="setup-screen">
+    <section class="setup-panel">
+      <h1>スマートプロジェクト</h1>
+      <p class="setup-lede">卓シミュレーション(ホットシート・ステージ1) — ゲーム設定をしてから「ゲーム開始」してください。</p>
+      <div class="setup-grid">
       <fieldset>
         <legend>プレイヤー({{ players.length }}人)</legend>
         <div v-for="p in players" :key="p.id" class="row">
@@ -125,7 +127,8 @@ function start() {
           </label>
         </div>
       </fieldset>
-    </div>
-    <button class="primary" @click="start">ゲーム開始</button>
-  </section>
+      </div>
+      <button class="primary" @click="start">ゲーム開始</button>
+    </section>
+  </div>
 </template>
