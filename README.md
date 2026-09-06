@@ -38,6 +38,7 @@ pnpm lint       # ESLint
 |---|---|
 | `packages/engine` | 純TSルールエンジン(UI/DB非依存・副作用なし・シード付き乱数) |
 | `apps/web` | Nuxt 4 ホットシートUI(1画面で全員を操作するデバッグUI) |
+| `packages/engine/sim` | バランスシミュレータ(エンジンをそのまま駆動するボット + モンテカルロ) |
 | `docs/RULES.md` | **ルールの単一の正(v5)** |
 | `docs/rules-v*-*.md` | 履歴(過去の討議ドラフト。現行ルールではありません) |
 
@@ -62,10 +63,32 @@ pnpm lint       # ESLint
 - 右下の `1:1` で等倍表示、`⤢` で全体表示に切り替わります
 - 左下の「📜 ログ」から進行ログ・Undo・リセットが使えます
 
+## バランスシミュレーション
+
+エンジンをそのまま駆動するボットで、モンテカルロを回せます(シード付き乱数なので完全に再現します)。
+
+```bash
+pnpm --filter @smart-project/engine sim                          # 既定設定 × 全戦略
+pnpm --filter @smart-project/engine sim -- --games 500
+pnpm --filter @smart-project/engine sim -- --sweep mustMissCs=1,2,3
+pnpm --filter @smart-project/engine sim -- --inflow experience,triage,pressure
+pnpm --filter @smart-project/engine sim -- --demand base,high
+pnpm --filter @smart-project/engine sim -- --deps serial,wide
+```
+
+結果と所見は **[RULES.md §13](docs/RULES.md)** にまとめています。要点:
+
+- ✅ v4.1 の課題だった「成り行き戦略が最強」は解消(#8 の Better・信頼ボーナスが効いている)
+- ❌ **謝絶がまったく使われない**(0.0〜0.2%)。チームに手空きがあり、割り込みを無料で吸収できるため
+- ❌ **早く Lv1 で出して後から改修する戦略が最強**(勝率 66% 対 32%)。
+  ルールが教えたい「安物買いの銭失い」と数値が逆を向いている
+- ❌ 依存が直列すぎて「仕事がない週」が 11〜17% ある
+
+対策案は RULES.md §13-4 に並べていますが、**いずれも未適用**です。
+
 ## 既知の制限(ステージ1のスコープ外)
 
 - ネットワーク対戦・Supabase 連携なし(ステージ2)
-- カードはプレイテスト用の仮データ。**v5 のバランスは未検証**
-  (v4.1 のモンテカルロ結果は約束モデル前提のため、v5 では再シミュレーションが必要。RULES.md §13)
+- カードはプレイテスト用の仮データ。**v5 のバランスは調整前**(測定は完了。RULES.md §13)
 - `redactFor` はエンジン API として実装済みだが、ホットシートUIでは未使用(全公開)
 - 個人目標・マイルストーン、プロダクトボードの完成ボーナスは未実装(RULES.md §13)
