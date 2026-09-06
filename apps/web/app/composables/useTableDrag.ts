@@ -1,5 +1,5 @@
 /**
- * 卓面のミープル ドラッグ&ドロップ(rules-v4-core.md §1-2-3「朝会」)。
+ * 卓面のミープル ドラッグ&ドロップ(RULES.md §8-3「朝会」)。
  * モック(mock-table-ui.html)のポインタードラッグ実装を Vue 向けに一般化したもの。
  * - ドラッグ中は module-level の drag state を更新し、実体の駒要素は動かさない
  *   (Vue の仮想DOM管理と衝突しないよう、追従表示は DragGhost.vue が担当)

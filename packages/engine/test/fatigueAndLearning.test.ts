@@ -1,5 +1,5 @@
 /**
- * 疲労(限界イベント)・学習(rules-v4-core.md §0・§1-2-2)
+ * 疲労(限界イベント)・学習(RULES.md §2-6・§8-3)
  */
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
@@ -21,6 +21,9 @@ describe('疲労と限界イベント', () => {
 
     // 最後(PM 'a')が Ready を宣言する直前まで進め、途中で自動解決させない
     for (const p of ['b', 'c', 'd']) {
+      state = must(
+        applyAction(state, { type: 'ASSIGN_WORKER', playerId: p, target: { kind: 'rest' } }),
+      )
       state = must(applyAction(state, { type: 'DECLARE_READY', playerId: p }))
     }
     state = must(applyAction(state, { type: 'DECLARE_READY', playerId: 'a' }))
@@ -51,6 +54,9 @@ describe('疲労と限界イベント', () => {
       }),
     )
     for (const p of ['b', 'c', 'd']) {
+      state = must(
+        applyAction(state, { type: 'ASSIGN_WORKER', playerId: p, target: { kind: 'rest' } }),
+      )
       state = must(applyAction(state, { type: 'DECLARE_READY', playerId: p }))
     }
     state = must(applyAction(state, { type: 'DECLARE_READY', playerId: 'a' }))

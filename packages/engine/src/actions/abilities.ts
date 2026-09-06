@@ -1,5 +1,5 @@
 /**
- * 個人能力(メンバーカード。フェーズ1回・行動枠を使わない)(rules-v4-core.md §3)
+ * 個人能力(メンバーカード。フェーズ1回・行動枠を使わない)(RULES.md §9-1)
  * multitask はパッシブのため USE_ABILITY の対象外。
  */
 import type { GameAction } from '../types/actions'
@@ -8,13 +8,13 @@ import type { RuleViolation } from '../types/violation'
 import { violation } from '../types/violation'
 import {
   addLog,
-  checkAcceptance,
   getBoardTask,
   getMember,
   getPlayer,
   getSlotDef,
   getSlotState,
   hasReworkCard,
+  refreshRequirements,
   updateBoardTask,
   updatePlayer,
   updateSlot,
@@ -60,16 +60,19 @@ export function handleUseAbility(
         return violation('INVALID_TARGET', 'Lv1 で手戻りのないスロットだけ磨き込めます。')
       }
       let next = updatePlayer(state, player.id, (p) => ({ ...p, abilityUsedPhase: state.phase }))
+      // Lv2 化で品質リスクも解消される(RULES.md §2-4)
       next = updateSlot(next, action.slotId, (s) => ({
         ...s,
         level: 2,
+        upgradeCubes: 0,
+        qualityRisk: false,
         contributorIds: s.contributorIds.includes(player.id)
           ? s.contributorIds
           : [...s.contributorIds, player.id],
       }))
       const name = getSlotDef(next.content, action.slotId)?.name ?? action.slotId
-      next = addLog(next, `💎 ${player.name} の「磨き込み」:【${name}】が Lv2 に`)
-      return checkAcceptance(next)
+      next = addLog(next, `💎 ${player.name} の「磨き込み」:【${name}】が Lv2 に(品質リスクを解消)`)
+      return refreshRequirements(next)
     }
 
     case 'automate': {

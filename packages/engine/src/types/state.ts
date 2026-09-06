@@ -1,19 +1,25 @@
 /**
- * GameState — ゲーム状態の型定義(rules-v4-core.md)
+ * GameState — ゲーム状態の型定義(RULES.md)
  * 状態はアクションログのリプレイで導出する(イベントソーシング)。
  */
 import type { GameConfig } from './config'
-import type { DeliverableLevel, GameContent, InterruptKind, Lane, SkillKind } from './content'
+import type {
+  DeliverableLevel,
+  GameContent,
+  InterruptKind,
+  RequirementTier,
+  SkillKind,
+} from './content'
 import type { WorkerTarget } from './actions'
 
 /** 現在のステップ */
 export type GameStep =
   | 'setup'
-  /** スコープ会議(約束・WBS配置。PM が FINISH_SCOPE で締める) */
+  /** スコープ会議(要件区分・計画ボード配置。PM が FINISH_SCOPE で締める) */
   | 'scope_meeting'
   /** 朝会(週次の同時配置。全員 Ready で週末へ) */
   | 'standup'
-  /** 週末(納品判定。END_WEEKEND で次週 or フェーズ終了へ) */
+  /** 週末(納品判定 → イベント → 再計画。END_WEEKEND で次週 or フェーズ終了へ) */
   | 'weekend'
   /** フェーズ終了(清算表示。ADVANCE_PHASE で次へ) */
   | 'phase_end'
@@ -33,30 +39,49 @@ export interface DeckState {
   discardPile: string[]
 }
 
-/** 盤上のタスク(WBS レーンに配置されたタスクカード) */
+/** 盤上のタスク(計画ボードに配置されたタスクカード、または割り込みカード) */
 export interface BoardTask {
-  /** タスクカードID */
+  /** タスクカードID(割り込みは 'interrupt-N') */
   cardId: string
   /** 積まれた工数キューブ */
   cubes: number
   /** 🔥の数(1個 = 必要工数+1) */
   fire: number
-  /** 配置された列(差し込みは 'interrupt') */
-  lane: Lane | 'interrupt'
+  /**
+   * 計画された週(1〜roundsPerPhase。null = Backlog)。
+   * 割り込みカードは常に null(いつでも着手できる。RULES.md §5-3)。
+   */
+  plannedWeek: number | null
   /** 差し込みの種類(通常タスクは null) */
   interrupt: InterruptKind | null
   /** 差し込みの必要工数(通常タスクはカード定義を使うため null) */
   interruptEffort: number | null
+  /** 差し込みの必要スキル(null = 指定なし・最高スキルで対応。RULES.md §8-4) */
+  interruptSkill: SkillKind | null
   /** 手戻りの対象スロット(rework のみ。他は null) */
   targetSlotId: string | null
   /** 相談ごとの報酬予算(consult のみ) */
   rewardBudget: number | null
+  /**
+   * 実工数(RULES.md §2-2)。null = 未公開(見積工数で扱う)。
+   * 初めてキューブが積まれた週の週末に確定・公開される。
+   */
+  actualEffort: number | null
   /** キューブを積んだことのあるプレイヤーID(納品時の参加者記録) */
   contributorIds: string[]
   /** 配置された順序(炎上ターゲット 'oldest' 用の連番) */
   placedSeq: number
   /** 必要工数の恒久減(個人能力「自動化」など) */
   effortReduction: number
+  /**
+   * イベントによる一時ブロック(クライアント確認待ち)。
+   * この週番号のあいだは着手できない(0 = なし。RULES.md §7-3 BLOCK_TASK)。
+   */
+  blockedUntilWeek: number
+  /** 完了で CS を得られる追加対応か(イベント選択肢由来。RULES.md §4-1) */
+  csOnFulfill: number
+  /** csOnFulfill の由来イベントカードID(重複防止のキー) */
+  sourceEventId: string | null
 }
 
 /** プロダクトボードのスロット状態 */
@@ -67,18 +92,36 @@ export interface SlotState {
   level: 0 | DeliverableLevel
   /** 改修の進行キューブ(upgradeCost 到達で Lv2 化) */
   upgradeCubes: number
+  /**
+   * 品質リスク(RULES.md §2-4)。
+   * Lv1 納品で立ち、Lv2 化(納品・改修・磨き込み)で下りる。
+   * 手戻り・バグの対象に選ばれやすく、手戻り対応の工数が増える。
+   */
+  qualityRisk: boolean
   /** 納品・改修に関与したプレイヤーID */
   contributorIds: string[]
 }
 
-/** 検収条件の約束 */
-export interface Commitment {
-  /** 検収条件カードID */
-  acceptanceId: string
-  /** 約束したフェーズ */
-  committedPhase: number
-  /** 交渉による猶予(このフェーズまで清算免除。0 = なし) */
-  graceUntilPhase: number
+/** 要件の状態(RULES.md §3) */
+export interface RequirementState {
+  /** 要件カードID */
+  requirementId: string
+  /** 現在の区分 */
+  tier: RequirementTier
+  /** 期限フェーズ(交渉で延長されうる) */
+  deadlinePhase: number
+  /** 達成済みか(手戻りが乗ると false に戻る) */
+  met: boolean
+  /** 清算済みか(期限フェーズ末に1回だけ清算する) */
+  settled: boolean
+  /** 清算結果('failed' = Must 未達確定 / 'expired' = Better 失効 / null = 未清算 or 達成) */
+  settledOutcome: 'met' | 'failed' | 'expired' | null
+  /** 追加要望として入ってきた要件か(表示用) */
+  addedByEvent: boolean
+  /** 完了で CS を得られる追加対応か(イベント選択肢由来。RULES.md §4-1) */
+  csOnFulfill: number
+  /** csOnFulfill の由来イベントカードID(重複防止のキー) */
+  sourceEventId: string | null
 }
 
 /** プレイヤー状態 */
@@ -99,6 +142,11 @@ export interface PlayerState {
   abilityUsedPhase: number
   /** このフェーズは残業禁止(限界イベント OVERTIME_BAN。0 = なし) */
   overtimeBanPhase: number
+  /**
+   * 他案件ヘルプによるキャパシティ減(RULES.md §7-3)。
+   * この週番号のあいだ、積むキューブが capacityDownCubes だけ減る(0 = なし)。
+   */
+  capacityDownUntilWeek: number
 }
 
 /** 今週のワーカー配属(効果は週末に一括適用) */
@@ -113,8 +161,8 @@ export interface WeekAssignment {
 
 /** 解決待ちイベント */
 export interface PendingEvent {
-  /** 発生契機 */
-  kind: 'week_start' | 'limit'
+  /** 発生契機(週末イベント / 疲労限界) */
+  kind: 'weekend' | 'limit'
   /** カードID(イベント or 限界イベント) */
   cardId: string
   /** 限界イベントの対象プレイヤーID(それ以外は null) */
@@ -162,16 +210,16 @@ export interface GameState {
   players: PlayerState[]
   /** タスク候補プール(カードID。スコープ会議で補充) */
   taskPool: string[]
-  /** 盤上のタスク(WBS + 割り込みレーン) */
+  /** 盤上のタスク(計画ボード + 割り込みレーン) */
   board: BoardTask[]
   /** プロダクトボード */
   slots: SlotState[]
-  /** 公開済みの検収条件カードID(累積) */
-  openAcceptanceIds: string[]
-  /** 約束(取り下げ・達成で解除) */
-  commitments: Commitment[]
-  /** 達成済みの検収条件カードID */
-  metAcceptanceIds: string[]
+  /** 公開済みの要件(累積。RULES.md §3) */
+  requirements: RequirementState[]
+  /** CS を獲得済みの要件ID(重複防止。RULES.md §4-3) */
+  csAwardedRequirementIds: string[]
+  /** CS を獲得済みのイベントカードID(重複防止。RULES.md §4-3) */
+  csAwardedEventIds: string[]
   /** デッキ群 */
   decks: {
     /** タスクカード山(候補プールへの補充元) */
@@ -191,22 +239,22 @@ export interface GameState {
   readyPlayerIds: string[]
   /** 週初トラブルの残り炎上ドロー数 */
   remainingFireDraws: number
-  /** 週初トラブルでイベントを引く前フラグ */
-  pendingWeekEventDraw: boolean
+  /** 週末イベントを引く前フラグ(納品判定のあとに引く) */
+  pendingWeekendEventDraw: boolean
   /** 解決待ちイベント */
   pendingEvent: PendingEvent | null
   /** 限界イベント処理待ちのプレイヤーID */
   pendingLimitPlayerIds: string[]
-  /** PM 交渉を使ったフェーズ(フェーズ1回。0 = 未使用) */
-  negotiationUsedPhase: number
+  /** 今フェーズのスコープ変更(Must を緩める交渉)の使用回数 */
+  scopeChangeUsedThisPhase: number
+  /** 今フェーズのタスク候補引き直しの使用回数 */
+  redrawUsedThisPhase: number
   /** 今フェーズの追加請求使用回数 */
   extraBillingUsedThisPhase: number
   /** 今週「段取り」を宣言したプレイヤーID(積むキューブ+1。週末処理でクリア) */
   expeditedPlayerIds: string[]
   /** 盤面配置の連番(placedSeq 採番用) */
   placementCounter: number
-  /** 各列への累計配置数(レーン文法の判定用) */
-  lanePlacedCount: Record<Lane, number>
   /** 進行ログ(フェーズ開始時にクリアしない。全履歴) */
   log: LogEntry[]
   /** 最終結果(ゲーム中は null) */

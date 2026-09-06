@@ -1,7 +1,10 @@
 <script setup lang="ts">
 /**
  * 卓のパン&ズームステージ。ドラッグで平行移動、ホイール/±ボタンで拡大縮小。
- * 初期カメラは卓全体が見渡せるフィット表示(1440×900 相当のビューポートを想定)。
+ *
+ * 初期カメラは「卓全体のフィット」ではなく **等倍(100%)** で卓の上端中央に合わせる
+ * (RULES.md §10-4:100% 表示で主要カードの本文が読めること)。
+ * 全体を見渡したいときは ⤢ ボタンでフィット表示に切り替える。
  */
 const stageEl = ref<HTMLElement | null>(null)
 const wrapEl = ref<HTMLElement | null>(null)
@@ -37,6 +40,17 @@ function fitAll() {
   view.scale = scale
   view.x = (stageEl.value.clientWidth - w * scale) / 2
   view.y = (stageEl.value.clientHeight - h * scale) / 2
+  applyView()
+}
+
+/** 等倍(100%)で卓の上端中央に合わせる。カード本文が読める既定の見え方 */
+function actualSize() {
+  if (!stageEl.value) return
+  const { w } = naturalSize()
+  view.scale = 1
+  // 卓がビューポートより広いときは左端を基準にする(左の列が切れないように)
+  view.x = w > stageEl.value.clientWidth ? 0 : (stageEl.value.clientWidth - w) / 2
+  view.y = 0
   applyView()
 }
 
@@ -86,14 +100,15 @@ function onWheel(e: WheelEvent) {
 }
 
 function onResize() {
-  fitAll()
+  // ユーザーが動かしたカメラは尊重し、はみ出しの補正だけ行う
+  applyView()
 }
 
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(async () => {
   await nextTick()
-  fitAll()
+  actualSize()
   window.addEventListener('resize', onResize)
   if (wrapEl.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
@@ -107,7 +122,7 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
 })
 
-defineExpose({ fitAll, zoomAt })
+defineExpose({ fitAll, actualSize, zoomAt })
 </script>
 
 <template>
@@ -129,6 +144,7 @@ defineExpose({ fitAll, zoomAt })
   <div class="zoom-controls">
     <button title="拡大" @click="zoomAt(stageEl!.clientWidth / 2, stageEl!.clientHeight / 2, 1.2)">+</button>
     <button title="縮小" @click="zoomAt(stageEl!.clientWidth / 2, stageEl!.clientHeight / 2, 1 / 1.2)">−</button>
+    <button title="等倍(100%)で表示" @click="actualSize">1:1</button>
     <button title="全体表示" @click="fitAll">⤢</button>
   </div>
 

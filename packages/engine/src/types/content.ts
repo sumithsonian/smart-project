@@ -1,18 +1,18 @@
 /**
- * コンテンツ(カード・スロット類)の型定義(rules-v4-core.md §0・§2・§3)
+ * コンテンツ(カード・スロット類)の型定義(RULES.md §2・§3・§7・§9)
  */
 
 /** スキル系統 */
 export type SkillKind = 'direction' | 'design' | 'engineering'
 
-/** WBS の列(レーン文法) */
-export type Lane = 'start' | 'middle' | 'finish'
-
 /** 成果物レベル */
 export type DeliverableLevel = 1 | 2
 
+/** タスクのリスク区分(実工数の振れ幅。RULES.md §2-2) */
+export type RiskLevel = 'low' | 'medium' | 'high'
+
 /**
- * タスクカード(検収条件を満たす「手段」。同じスロットに複数の道がある)
+ * タスクカード(要件を満たす「手段」。同じスロットに複数の道がある)
  */
 export interface TaskCard {
   /** カードID */
@@ -23,18 +23,20 @@ export interface TaskCard {
   phase: number
   /** 埋めるプロダクトボードのスロットID */
   slot: string
-  /** 系統(v4.0 は単一系統) */
+  /** 系統(v5.0 は単一系統) */
   skill: SkillKind
-  /** 必要工数(キューブ数) */
-  effort: number
+  /** 見積工数(公開情報。実工数はリスク別補正で決まる) */
+  estimate: number
+  /** リスク(見積の不確実性。公開情報。RULES.md §2-2) */
+  risk: RiskLevel
   /** 上限Lv(1 = 安い道。積み増しによる Lv2 納品は不可) */
   maxLevel: DeliverableLevel
   /** 座った週の疲労値(1 通常 / 2 重) */
   fatigue: 1 | 2
   /** 納品時の実行コスト(予算) */
   cost: number
-  /** 配置できる列 */
-  lane: Lane
+  /** 前提成果物(着手にはこれらのスロットが納品済みである必要がある。RULES.md §6-1) */
+  prerequisiteSlots: string[]
 }
 
 /** プロダクトボードのスロット定義 */
@@ -47,8 +49,20 @@ export interface SlotDef {
   skill: SkillKind
 }
 
-/** 検収条件カード(お客様の求める成果。スロット×要求Lv) */
-export interface AcceptanceCard {
+/** 要件の区分(RULES.md §3-2) */
+export type RequirementTier =
+  /** Must(期限までに必要。未達で CS 減) */
+  | 'must'
+  /** Better(任意。達成で CS 増、未達の罰なし) */
+  | 'better'
+  /** 見送り(今回のスコープ外) */
+  | 'dropped'
+
+/**
+ * 要件カード(お客様の求める成果。スロット×要求Lv×期限)
+ * v4 の「検収条件カード + 約束」を置き換える(RULES.md §3-1)。
+ */
+export interface RequirementCard {
   /** カードID */
   id: string
   /** 条件名(例:「トップページは磨き込みたい」) */
@@ -59,18 +73,24 @@ export interface AcceptanceCard {
   slot: string
   /** 要求レベル */
   level: DeliverableLevel
+  /** 期限(このフェーズ末に清算する) */
+  deadlinePhase: number
+  /** 初期区分(カードに刷ってある) */
+  tier: Exclude<RequirementTier, 'dropped'>
 }
 
-/** 差し込みの種類(rules-v4-core.md §1-2-1) */
+/** 差し込みの種類(RULES.md §8-4) */
 export type InterruptKind =
-  /** 手戻り:納品済みスロットに手戻りキューブ。乗っている間そのスロットは検収上未達 */
+  /** 手戻り:対象スロットは解消まで検収上「未達」扱い */
   | 'rework'
-  /** バグ報告:対応タスクが出る。未対応の間フェーズ末ごとに CS-1 */
+  /** バグ報告:未対応の間フェーズ末ごとに CS-1 */
   | 'bug'
-  /** 相談ごと:任意対応。完了で報酬 */
+  /** 相談ごと:任意対応。完了で報酬。フェーズ末に自然消滅 */
   | 'consult'
 
-/** イベントカードの効果 */
+/**
+ * イベントカードの効果(RULES.md §7-3)
+ */
 export type EventEffect =
   /** 予算増減 */
   | { type: 'BUDGET'; amount: number }
@@ -78,12 +98,62 @@ export type EventEffect =
   | { type: 'CS'; amount: number }
   /** 全員の疲労増減 */
   | { type: 'FATIGUE_ALL'; amount: number }
-  /** 差し込み(rework: cubes 個の手戻り / bug・consult: effort 個の割り込みタスク) */
-  | { type: 'INTERRUPT'; kind: InterruptKind; amount: number; rewardBudget?: number }
+  /**
+   * 差し込み:割り込みレーンにカードを追加する。
+   * skill を指定すると、その系統でしか対応できない(rework は対象スロットの系統を使う)。
+   */
+  | {
+      type: 'INTERRUPT'
+      kind: InterruptKind
+      /** 必要工数 */
+      amount: number
+      /** 必要スキル(null = 指定なし・最高スキルで対応。rework では無視) */
+      skill?: SkillKind | null
+      /** 相談ごとの報酬予算 */
+      rewardBudget?: number
+    }
+  /** 他案件ヘルプ:対象プレイヤーの次週に積むキューブを減らす(RULES.md §7-3) */
+  | { type: 'CAPACITY_DOWN'; amount?: number }
+  /** クライアント確認待ち:対象タスクを次週だけ開始できなくする */
+  | { type: 'BLOCK_TASK' }
+  /** 要件追加:新しい要件をスコープボードへ(RULES.md §3-6) */
+  | {
+      type: 'ADD_REQUIREMENT'
+      /** 追加する要件カードID(content.requirements に定義しておく) */
+      requirementId: string
+      /** 追加時の区分 */
+      tier: Exclude<RequirementTier, 'dropped'>
+      /** 期限を「現在フェーズ + n」にする(省略時はカード定義の deadlinePhase) */
+      deadlineOffset?: number
+    }
+  /** 品質レビュー:品質リスクのあるスロット1つにつき CS-1(最大 maxPenalty) */
+  | { type: 'QUALITY_AUDIT'; maxPenalty: number }
   /** 何も起きない */
   | { type: 'NONE' }
 
-/** イベントカード(週初のトラブル) */
+/**
+ * イベントの選択肢(RULES.md §7-2)
+ * 「受ける / 交渉する / 断る」など。選択はアクションログに残り再現できる。
+ */
+export interface EventChoice {
+  /** 選択肢ID(RESOLVE_EVENT で指定する) */
+  id: string
+  /** 表示ラベル(例:「受ける」) */
+  label: string
+  /** 補足説明 */
+  description: string
+  /** この選択で適用される効果 */
+  effects: EventEffect[]
+  /**
+   * 成果達成で CS を得られる追加対応か(RULES.md §4-1)。
+   * 指定すると、この選択で追加された要件・差し込みを完了した時点で CS を得る。
+   */
+  csOnFulfill?: number
+  /** 選択に必要な予算(足りなければ選べない) */
+  budgetCost?: number
+}
+
+/** イベントカード(週末に1枚めくる。RULES.md §7-1) */
 export interface EventCard {
   /** カードID */
   id: string
@@ -91,21 +161,25 @@ export interface EventCard {
   name: string
   /** フレーバーテキスト */
   description: string
-  /** 効果(複数可) */
+  /** 選択肢なしのときの効果 */
   effects: EventEffect[]
+  /** 選択肢(2つ以上あるとプレイヤーが選ぶ) */
+  choices?: EventChoice[]
 }
 
 /**
- * 炎上カードのターゲット条件(名指しではなく条件式。rules-v4-core.md §0)
+ * 炎上カードのターゲット条件(名指しではなく条件式。RULES.md §9-3)
  * 該当タスクが複数のときは盤面の配置順で先のもの(物理版は PM 裁定)。
  */
 export type FireTarget =
-  /** キューブ最多の進行中(未納品)タスク */
+  /** キューブ最多の未納品タスク */
   | 'most_cubes'
-  /** 仕上げ列の未納品タスク(なければ中盤→起点) */
-  | 'lane_finish'
   /** 最も古く場に出た未納品タスク */
   | 'oldest'
+  /** 今週予定のタスク(なければ最も近い予定週) */
+  | 'this_week'
+  /** ブロック中のタスク(なければ最も古いタスク) */
+  | 'blocked'
   /** 大炎上:進行中の全タスクに🔥+1 */
   | 'epidemic'
 
@@ -144,11 +218,11 @@ export interface LimitEventCard {
   effect: LimitEventEffect
 }
 
-/** 個人能力の種類(メンバーカードに1つ。rules-v4-core.md §3) */
+/** 個人能力の種類(メンバーカードに1つ。RULES.md §9-1) */
 export type AbilityKind =
   /** マルチタスク(パッシブ):残業の追加疲労なし */
   | 'multitask'
-  /** 磨き込み:週末に納品済みスロット1つを Lv1→Lv2 */
+  /** 磨き込み:週末に納品済みスロット1つを Lv1→Lv2(品質リスクも除去) */
   | 'polish'
   /** 段取り:朝会で宣言。今週自分の積むキューブ+1 */
   | 'expedite'
@@ -189,8 +263,8 @@ export interface GameContent {
   slots: SlotDef[]
   /** タスクカード */
   tasks: TaskCard[]
-  /** 検収条件カード */
-  acceptance: AcceptanceCard[]
+  /** 要件カード(公開分 + イベントで追加されうる分) */
+  requirements: RequirementCard[]
   /** イベントカード(差し込み込み) */
   events: EventCard[]
   /** 炎上カード */

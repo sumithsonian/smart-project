@@ -1,24 +1,34 @@
 /**
- * タスクカード(約20枚)
- * 各スロット(9個)に「堅い道」「安い道」の2枚 + 中間・バリエーション2-3枚
- * phase=公開フェーズ / lane=配置可能列 / skill=系統 / effort=必要工数 / maxLevel=上限Lv
+ * タスクカード(21枚)
+ * 各スロットに「堅い道(長いが低リスク)」「安い道(短いが高リスク)」の2枚 + 中間 2〜3枚。
+ *
+ * phase        = 候補プールに補充されるフェーズ
+ * estimate     = 見積工数(公開情報。実工数は risk 別分布で振れる。RULES.md §2-2)
+ * risk         = 見積の不確実性(低=振れ幅小 / 高=上振れしやすい)
+ * maxLevel     = 上限Lv(1 = 積み増しによる Lv2 納品は不可)
+ * prerequisiteSlots = 前提成果物(納品済みでないと着手できない。RULES.md §6-1)
+ *
+ * 依存の連鎖:
+ *   要件定義書 → サイトマップ → ワイヤーフレーム → デザインカンプ → トップ / 下層 → テスト・公開
+ *                          ↘ CMS              ↘ スタイルガイド
  */
 import type { TaskCard } from '../types/content'
 
 export const TASKS: TaskCard[] = [
   // ═══ フェーズ1: 企画・要件定義 ═══
-  // 要件定義書(requirements) — phase 1
+  // 要件定義書(requirements) — 起点。前提なし
   {
     id: 't-req-heavy',
     name: 'フルヒアリング・要件定義',
     phase: 1,
     slot: 'requirements',
     skill: 'direction',
-    effort: 5,
+    estimate: 5,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'start',
+    prerequisiteSlots: [],
   },
   {
     id: 't-req-light',
@@ -26,24 +36,26 @@ export const TASKS: TaskCard[] = [
     phase: 1,
     slot: 'requirements',
     skill: 'direction',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'start',
+    prerequisiteSlots: [],
   },
-  // サイトマップ(sitemap) — phase 1
+  // サイトマップ(sitemap) — 要件定義書が必要
   {
     id: 't-sitemap-heavy',
     name: '複雑ナビゲーション設計',
     phase: 1,
     slot: 'sitemap',
     skill: 'direction',
-    effort: 4,
+    estimate: 4,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'start',
+    prerequisiteSlots: ['requirements'],
   },
   {
     id: 't-sitemap-light',
@@ -51,11 +63,12 @@ export const TASKS: TaskCard[] = [
     phase: 1,
     slot: 'sitemap',
     skill: 'direction',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'start',
+    prerequisiteSlots: ['requirements'],
   },
   {
     id: 't-sitemap-mid',
@@ -63,25 +76,28 @@ export const TASKS: TaskCard[] = [
     phase: 1,
     slot: 'sitemap',
     skill: 'direction',
-    effort: 3,
+    estimate: 3,
+    risk: 'medium',
     maxLevel: 2,
     fatigue: 1,
     cost: 1,
-    lane: 'start',
+    prerequisiteSlots: ['requirements'],
   },
+
   // ═══ フェーズ2: 設計・デザイン ═══
-  // ワイヤーフレーム(wireframe) — phase 2
+  // ワイヤーフレーム(wireframe) — サイトマップが必要
   {
     id: 't-wireframe-heavy',
     name: 'ハイフィ・インタラクション設計',
     phase: 2,
     slot: 'wireframe',
     skill: 'design',
-    effort: 4,
+    estimate: 4,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'start',
+    prerequisiteSlots: ['sitemap'],
   },
   {
     id: 't-wireframe-light',
@@ -89,24 +105,26 @@ export const TASKS: TaskCard[] = [
     phase: 2,
     slot: 'wireframe',
     skill: 'design',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'start',
+    prerequisiteSlots: ['sitemap'],
   },
-  // デザインカンプ(design-comp) — phase 2
+  // デザインカンプ(design-comp) — ワイヤーフレームが必要
   {
     id: 't-design-heavy',
     name: 'フルオーダーデザイン',
     phase: 2,
     slot: 'design-comp',
     skill: 'design',
-    effort: 5,
+    estimate: 5,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'middle',
+    prerequisiteSlots: ['wireframe'],
   },
   {
     id: 't-design-light',
@@ -114,36 +132,39 @@ export const TASKS: TaskCard[] = [
     phase: 2,
     slot: 'design-comp',
     skill: 'design',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['wireframe'],
   },
   {
     id: 't-design-mid',
-    name: 'テンプレーション カスタム',
+    name: 'テンプレート カスタム',
     phase: 2,
     slot: 'design-comp',
     skill: 'design',
-    effort: 3,
+    estimate: 3,
+    risk: 'medium',
     maxLevel: 2,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['wireframe'],
   },
-  // スタイルガイド(styleguide) — phase 2
+  // スタイルガイド(styleguide) — ワイヤーフレームが必要
   {
     id: 't-guide-heavy',
     name: 'デザインシステム構築',
     phase: 2,
     slot: 'styleguide',
     skill: 'design',
-    effort: 4,
+    estimate: 4,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'middle',
+    prerequisiteSlots: ['wireframe'],
   },
   {
     id: 't-guide-light',
@@ -151,50 +172,55 @@ export const TASKS: TaskCard[] = [
     phase: 2,
     slot: 'styleguide',
     skill: 'design',
-    effort: 2,
+    estimate: 2,
+    risk: 'medium',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['wireframe'],
   },
+
   // ═══ フェーズ3: 開発 ═══
-  // トップページ(top-page) — phase 3
+  // トップページ(top-page) — デザインカンプが必要
   {
     id: 't-top-heavy',
     name: 'トップページ完全カスタム',
     phase: 3,
     slot: 'top-page',
     skill: 'engineering',
-    effort: 5,
+    estimate: 5,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'middle',
+    prerequisiteSlots: ['design-comp'],
   },
   {
     id: 't-top-light',
-    name: 'トップページスクラッチ',
+    name: 'トップページ スクラッチ',
     phase: 3,
     slot: 'top-page',
     skill: 'engineering',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['design-comp'],
   },
-  // 下層ページ(sub-pages) — phase 3
+  // 下層ページ(sub-pages) — デザインカンプが必要
   {
     id: 't-sub-heavy',
-    name: '下層ページ豊富オーダー',
+    name: '下層ページ 豊富オーダー',
     phase: 3,
     slot: 'sub-pages',
     skill: 'engineering',
-    effort: 4,
+    estimate: 4,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'middle',
+    prerequisiteSlots: ['design-comp'],
   },
   {
     id: 't-sub-light',
@@ -202,24 +228,26 @@ export const TASKS: TaskCard[] = [
     phase: 3,
     slot: 'sub-pages',
     skill: 'engineering',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['design-comp'],
   },
-  // CMS(cms) — phase 3
+  // CMS(cms) — サイトマップが必要(デザインとは並行できる)
   {
     id: 't-cms-heavy',
     name: 'フル CMS 構築',
     phase: 3,
     slot: 'cms',
     skill: 'engineering',
-    effort: 5,
+    estimate: 5,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'middle',
+    prerequisiteSlots: ['sitemap'],
   },
   {
     id: 't-cms-light',
@@ -227,11 +255,12 @@ export const TASKS: TaskCard[] = [
     phase: 3,
     slot: 'cms',
     skill: 'direction',
-    effort: 2,
+    estimate: 2,
+    risk: 'high',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['sitemap'],
   },
   {
     id: 't-cms-mid',
@@ -239,25 +268,28 @@ export const TASKS: TaskCard[] = [
     phase: 3,
     slot: 'cms',
     skill: 'engineering',
-    effort: 3,
+    estimate: 3,
+    risk: 'medium',
     maxLevel: 2,
     fatigue: 1,
     cost: 1,
-    lane: 'middle',
+    prerequisiteSlots: ['sitemap'],
   },
+
   // ═══ フェーズ4: テスト・公開 ═══
-  // テスト・公開(launch) — phase 4
+  // テスト・公開(launch) — トップページが必要
   {
     id: 't-launch-heavy',
     name: '詳細テスト・チューニング',
     phase: 4,
     slot: 'launch',
     skill: 'engineering',
-    effort: 4,
+    estimate: 4,
+    risk: 'low',
     maxLevel: 2,
     fatigue: 2,
     cost: 2,
-    lane: 'finish',
+    prerequisiteSlots: ['top-page'],
   },
   {
     id: 't-launch-light',
@@ -265,10 +297,11 @@ export const TASKS: TaskCard[] = [
     phase: 4,
     slot: 'launch',
     skill: 'engineering',
-    effort: 2,
+    estimate: 2,
+    risk: 'medium',
     maxLevel: 1,
     fatigue: 1,
     cost: 1,
-    lane: 'finish',
+    prerequisiteSlots: ['top-page'],
   },
 ]

@@ -1,5 +1,5 @@
 /**
- * プロダクトボードのスロット定義(rules-v4-core.md §2)
+ * プロダクトボードのスロット定義(RULES.md §2)
  * 作っている Web サイトの完成図。納品した成果物が Lv 付きではまっていく。
  */
 import type { SlotDef } from '../types/content'

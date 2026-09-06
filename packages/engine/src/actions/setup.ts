@@ -1,5 +1,5 @@
 /**
- * SETUP_GAME — ゲームセットアップ(rules-v4-core.md)
+ * SETUP_GAME — ゲームセットアップ(RULES.md)
  * メンバーカード配布 → プロダクトボード初期化 → デッキ構成 → 第1フェーズのスコープ会議へ
  */
 import type { GameAction } from '../types/actions'
@@ -78,6 +78,7 @@ export function handleSetupGame(
       pendingLearn: null,
       abilityUsedPhase: 0,
       overtimeBanPhase: 0,
+      capacityDownUntilWeek: 0,
     }
   })
 
@@ -104,11 +105,12 @@ export function handleSetupGame(
       slotId: s.id,
       level: 0 as const,
       upgradeCubes: 0,
+      qualityRisk: false,
       contributorIds: [],
     })),
-    openAcceptanceIds: [],
-    commitments: [],
-    metAcceptanceIds: [],
+    requirements: [],
+    csAwardedRequirementIds: [],
+    csAwardedEventIds: [],
     decks: {
       tasks: { drawPile: [], discardPile: [] },
       events: eventDeck,
@@ -119,18 +121,18 @@ export function handleSetupGame(
     assignments: [],
     readyPlayerIds: [],
     remainingFireDraws: 0,
-    pendingWeekEventDraw: false,
+    pendingWeekendEventDraw: false,
     pendingEvent: null,
     pendingLimitPlayerIds: [],
-    negotiationUsedPhase: 0,
+    scopeChangeUsedThisPhase: 0,
+    redrawUsedThisPhase: 0,
     extraBillingUsedThisPhase: 0,
     expeditedPlayerIds: [],
     placementCounter: 0,
-    lanePlacedCount: { start: 0, middle: 0, finish: 0 },
     log: [],
     result: null,
   }
 
-  // ── 第1フェーズのスコープ会議を開く(検収条件の公開・候補プール補充)──
+  // ── 第1フェーズのスコープ会議を開く(要件の公開・候補プール補充)──
   return openScopeMeeting(next)
 }

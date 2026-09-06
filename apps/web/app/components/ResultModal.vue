@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** ゲーム終了(rules-v4-core.md §1-3-5):勝敗+最終検収の内訳。 */
+/** ゲーム終了(RULES.md §4-4):勝敗+最終検収の内訳。 */
 const { state, reset } = useGame()
 
 const summary = computed(() => {

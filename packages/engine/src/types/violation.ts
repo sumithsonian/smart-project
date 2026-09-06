@@ -21,10 +21,18 @@ export type RuleViolationCode =
   | 'NO_PENDING_EVENT'
   /** 対象カード・タスク・スロットが見つからない */
   | 'NOT_FOUND'
-  /** 検収条件はすでに約束済み/達成済み */
-  | 'ALREADY_COMMITTED'
-  /** レーン文法違反(直前の列にタスクがない) */
-  | 'LANE_GRAMMAR'
+  /** 要件の区分変更ができない(清算済み・達成済みなど) */
+  | 'SCOPE_LOCKED'
+  /** 前提成果物が未納品でブロック中(RULES.md §6-2) */
+  | 'TASK_BLOCKED'
+  /** 今週予定のタスクではない(RULES.md §5-3) */
+  | 'NOT_PLANNED_THIS_WEEK'
+  /** 計画ボードの週指定が不正 */
+  | 'INVALID_WEEK'
+  /** 未配属のプレイヤーがいるため準備完了できない(RULES.md §10-4) */
+  | 'NOT_ASSIGNED'
+  /** 予算が足りない */
+  | 'NOT_ENOUGH_BUDGET'
   /** すでに配属済み */
   | 'ALREADY_ASSIGNED'
   /** 取り消せる配属がない */
@@ -35,6 +43,8 @@ export type RuleViolationCode =
   | 'OVERTIME_FORBIDDEN'
   /** すでに Ready 宣言済み */
   | 'ALREADY_READY'
+  /** Ready 宣言していない(解除できない) */
+  | 'NOT_READY'
   /** 納品できない(工数不足・予算不足・対象不正) */
   | 'CANNOT_DELIVER'
   /** 交渉・追加請求・能力のフェーズ回数上限 */

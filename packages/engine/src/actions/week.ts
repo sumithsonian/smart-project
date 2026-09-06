@@ -1,5 +1,6 @@
 /**
- * 週次ループ:週初トラブル(炎上→イベント)と朝会(配属)(rules-v4-core.md §1-2)
+ * 週次ループ:週初の炎上と朝会(配属)(RULES.md §8-2・§8-3)
+ * イベントは週末に引く(RULES.md §7-1)。
  */
 import type { GameAction, WorkerTarget } from '../types/actions'
 import type { BoardTask, GameState } from '../types/state'
@@ -16,14 +17,24 @@ import {
   getSlotDef,
   getSlotState,
   getTaskCard,
+  isTaskBlocked,
+  taskSkill,
+  unmetPrerequisites,
   updateBoardTask,
 } from '../helpers'
 import { processWeekend } from './weekend'
 
 /** タスクの表示名(差し込みは種別ラベル付き) */
 export function taskLabel(state: GameState, task: BoardTask): string {
-  const card = getTaskCard(state.content, task.cardId)
-  return card?.name ?? task.cardId
+  if (task.interrupt === 'rework') {
+    const name = task.targetSlotId
+      ? getSlotDef(state.content, task.targetSlotId)?.name ?? task.targetSlotId
+      : ''
+    return `手戻り対応(${name})`
+  }
+  if (task.interrupt === 'bug') return 'バグ対応'
+  if (task.interrupt === 'consult') return '相談ごと'
+  return getTaskCard(state.content, task.cardId)?.name ?? task.cardId
 }
 
 /** 進行中(未納品)タスク一覧 */
@@ -35,20 +46,29 @@ function activeTasks(state: GameState): BoardTask[] {
 function resolveFireTarget(state: GameState, target: FireTarget): BoardTask | null {
   const tasks = activeTasks(state)
   if (tasks.length === 0) return null
+  const bySeq = (list: BoardTask[]) => [...list].sort((a, b) => a.placedSeq - b.placedSeq)[0]!
   switch (target) {
     case 'most_cubes': {
       const max = Math.max(...tasks.map((t) => t.cubes))
-      return tasks.filter((t) => t.cubes === max).sort((a, b) => a.placedSeq - b.placedSeq)[0]!
-    }
-    case 'lane_finish': {
-      for (const lane of ['finish', 'middle', 'start'] as const) {
-        const inLane = tasks.filter((t) => t.lane === lane)
-        if (inLane.length > 0) return inLane.sort((a, b) => a.placedSeq - b.placedSeq)[0]!
-      }
-      return tasks[0]!
+      return bySeq(tasks.filter((t) => t.cubes === max))
     }
     case 'oldest':
-      return [...tasks].sort((a, b) => a.placedSeq - b.placedSeq)[0]!
+      return bySeq(tasks)
+    case 'this_week': {
+      const thisWeek = tasks.filter((t) => t.plannedWeek === state.week)
+      if (thisWeek.length > 0) return bySeq(thisWeek)
+      // 予定週が最も近いもの(Backlog・割り込みは最後に回す)
+      const planned = tasks.filter((t) => t.plannedWeek !== null)
+      if (planned.length > 0) {
+        const nearest = Math.min(...planned.map((t) => t.plannedWeek!))
+        return bySeq(planned.filter((t) => t.plannedWeek === nearest))
+      }
+      return bySeq(tasks)
+    }
+    case 'blocked': {
+      const blocked = tasks.filter((t) => isTaskBlocked(state, t))
+      return blocked.length > 0 ? bySeq(blocked) : bySeq(tasks)
+    }
     case 'epidemic':
       return null // 呼び出し側で全タスク処理
   }
@@ -56,17 +76,20 @@ function resolveFireTarget(state: GameState, target: FireTarget): BoardTask | nu
 
 /**
  * 🔥を1個置く。fireOutbreakThreshold 個目は置く代わりに延焼:
- * 同じ列の進行中タスク全部に🔥+1、CS-1。
+ * 同じ予定週のタスク全部に🔥+1、CS-1(RULES.md §2-5)。
  */
 function addFire(state: GameState, cardId: string): GameState {
   const task = getBoardTask(state, cardId)
   if (!task) return state
   if (task.fire >= state.config.fireOutbreakThreshold - 1) {
     let next = changeCs(state, -1)
-    next = addLog(next, `🚨 「${taskLabel(state, task)}」が延焼!同じ列に飛び火(CS-1)`)
+    next = addLog(
+      next,
+      `🚨 「${taskLabel(state, task)}」が延焼!同じ週の予定に飛び火(CS-1)`,
+    )
     if (next.result !== null) return next
     for (const other of next.board) {
-      if (other.lane === task.lane && other.cardId !== task.cardId) {
+      if (other.plannedWeek === task.plannedWeek && other.cardId !== task.cardId) {
         next = updateBoardTask(next, other.cardId, (t) => ({ ...t, fire: t.fire + 1 }))
       }
     }
@@ -117,7 +140,8 @@ function processFireDraws(state: GameState): GameState {
 }
 
 /**
- * 週を開始する:学習予約の反映 → 炎上ドロー → 週初イベントのドロー(解決は RESOLVE_EVENT)。
+ * 週を開始する:学習予約の反映 → 炎上ドロー(RULES.md §8-2)。
+ * イベントは週末に引くため、ここでは引かない。
  */
 export function startWeek(state: GameState, week: number): GameState {
   let next: GameState = {
@@ -128,6 +152,7 @@ export function startWeek(state: GameState, week: number): GameState {
     readyPlayerIds: [],
     expeditedPlayerIds: [],
     remainingFireDraws: state.config.firePerRound,
+    pendingWeekendEventDraw: false,
   }
   // 学習予約の反映(先週の学習が今週から効く)
   for (const p of next.players) {
@@ -148,23 +173,19 @@ export function startWeek(state: GameState, week: number): GameState {
             : pl,
         ),
       }
-      next = addLog(next, `📚 ${p.name} の ${skill} が Lv${next.players.find((pl) => pl.id === p.id)!.skills[skill]} に成長`)
+      const grown = next.players.find((pl) => pl.id === p.id)!.skills[skill]
+      next = addLog(next, `📚 ${p.name} の ${skillName(skill)} が Lv${grown} に成長`)
     }
   }
   next = addLog(next, `── フェーズ${next.phase} 第${week}週 ──`)
-  next = processFireDraws(next)
-  if (next.result !== null) return next
-  // 週初イベントを1枚引く
-  const { cardId, deck, rng } = drawCard(next.decks.events, next.rng)
-  if (cardId !== null) {
-    next = {
-      ...next,
-      decks: { ...next.decks, events: deck },
-      rng,
-      pendingEvent: { kind: 'week_start', cardId, targetPlayerId: null },
-    }
-  }
-  return next
+  return processFireDraws(next)
+}
+
+/** 系統の日本語名 */
+export function skillName(skill: 'direction' | 'design' | 'engineering'): string {
+  if (skill === 'direction') return 'ディレクション'
+  if (skill === 'design') return 'デザイン'
+  return 'エンジニアリング'
 }
 
 /** 朝会の共通ガード */
@@ -184,7 +205,7 @@ function guardStandup(state: GameState, playerId: string): RuleViolation | null 
   return null
 }
 
-/** 配属先の検証 */
+/** 配属先の検証(RULES.md §8-3) */
 function validateTarget(
   state: GameState,
   playerId: string,
@@ -195,28 +216,61 @@ function validateTarget(
     case 'task': {
       const task = getBoardTask(state, target.cardId)
       if (!task) return violation('NOT_FOUND', `盤上にないタスクです: ${target.cardId}`)
-      // 差し込み(bug/consult)は系統不問(最高スキル=総合対応力で積む)
-      const skill = task.interrupt ? undefined : getTaskCard(state.content, task.cardId)?.skill
-      if (skill !== undefined && player.skills[skill] < 1) {
-        return violation('SKILL_ZERO', `${skill} のスキルが 0 のため、このタスクには座れません。`)
+      // ① ブロック中(前提未達 or 確認待ち)には座れない
+      if (isTaskBlocked(state, task)) {
+        const unmet = unmetPrerequisites(state, task)
+          .map((id) => getSlotDef(state.content, id)?.name ?? id)
+          .join('・')
+        return violation(
+          'TASK_BLOCKED',
+          unmet.length > 0
+            ? `「${taskLabel(state, task)}」はブロック中です(前提:${unmet} が未納品)。`
+            : `「${taskLabel(state, task)}」はクライアント確認待ちで、今週は着手できません。`,
+        )
+      }
+      // ② 今週予定でない計画タスクには座れない(割り込みはいつでも可)
+      if (!task.interrupt && task.plannedWeek !== state.week) {
+        return violation(
+          'NOT_PLANNED_THIS_WEEK',
+          `「${taskLabel(state, task)}」は今週の予定ではありません(${
+            task.plannedWeek === null ? 'Backlog' : `第${task.plannedWeek}週`
+          })。再計画は週末に行います。`,
+        )
+      }
+      // ③ 必要スキルが 0 なら座れない(系統指定なしの割り込みは誰でも可)
+      const skill = taskSkill(state, task)
+      if (skill !== null && player.skills[skill] < 1) {
+        return violation(
+          'SKILL_ZERO',
+          `${skillName(skill)} のスキルが 0 のため、このタスクには座れません。`,
+        )
       }
       return null
     }
     case 'slot': {
-      // 手戻りはカード化されたため、スロットに座れるのは Lv1 の改修のみ
+      // スロットに座れるのは Lv1 の改修のみ(手戻り対応は割り込みレーンの task)
       const slot = getSlotState(state, target.slotId)
       if (!slot || slot.level !== 1) {
-        return violation('NOT_FOUND', 'Lv1 で納品済みのスロットではありません(改修は納品後の Lv1 のみ)。')
+        return violation(
+          'NOT_FOUND',
+          'Lv1 で納品済みのスロットではありません(改修は納品後の Lv1 のみ)。',
+        )
       }
       const def = getSlotDef(state.content, target.slotId)!
       if (player.skills[def.skill] < 1) {
-        return violation('SKILL_ZERO', `${def.skill} のスキルが 0 のため、このスロットには座れません。`)
+        return violation(
+          'SKILL_ZERO',
+          `${skillName(def.skill)} のスキルが 0 のため、このスロットには座れません。`,
+        )
       }
       return null
     }
     case 'learn':
-      if (player.skills[target.skill] + (player.pendingLearn === target.skill ? 1 : 0) >= state.config.skillMax) {
-        return violation('SKILL_MAX', `${target.skill} はすでに上限です。`)
+      if (
+        player.skills[target.skill] + (player.pendingLearn === target.skill ? 1 : 0) >=
+        state.config.skillMax
+      ) {
+        return violation('SKILL_MAX', `${skillName(target.skill)} はすでに上限です。`)
       }
       return null
     case 'rest':
@@ -243,7 +297,10 @@ export function handleAssignWorker(
   const player = getPlayer(state, action.playerId)!
   const overtime = action.overtime ?? false
   if (state.assignments.some((a) => a.playerId === player.id && a.overtime === overtime)) {
-    return violation('ALREADY_ASSIGNED', overtime ? '残業枠は配属済みです。' : '主担当は配属済みです。')
+    return violation(
+      'ALREADY_ASSIGNED',
+      overtime ? '残業枠は配属済みです。' : '主担当は配属済みです。',
+    )
   }
   if (overtime) {
     if (!state.assignments.some((a) => a.playerId === player.id && !a.overtime)) {
@@ -285,16 +342,45 @@ export function handleUnassignWorker(
   return { ...state, assignments: state.assignments.filter((a) => a !== assignment) }
 }
 
-/** DECLARE_READY — 準備完了宣言。全員揃ったら週末処理へ */
+/**
+ * DECLARE_READY — 準備完了宣言。全員揃ったら週末処理へ。
+ * 未配属のままでは宣言できない(RULES.md §10-4)。
+ */
 export function handleDeclareReady(
   state: GameState,
   action: Extract<GameAction, { type: 'DECLARE_READY' }>,
 ): GameState | RuleViolation {
   const guard = guardStandup(state, action.playerId)
   if (guard) return guard
+  if (!state.assignments.some((a) => a.playerId === action.playerId && !a.overtime)) {
+    return violation(
+      'NOT_ASSIGNED',
+      '今週の自分を決めてから準備完了してください(座る・学習・休憩・消火のいずれか)。',
+    )
+  }
   const readyPlayerIds = [...state.readyPlayerIds, action.playerId]
   if (readyPlayerIds.length === state.players.length) {
     return processWeekend({ ...state, readyPlayerIds })
   }
   return { ...state, readyPlayerIds }
+}
+
+/** CANCEL_READY — 準備完了を取り消す(全員揃う前のみ。RULES.md §10-4) */
+export function handleCancelReady(
+  state: GameState,
+  action: Extract<GameAction, { type: 'CANCEL_READY' }>,
+): GameState | RuleViolation {
+  if (state.step !== 'standup') {
+    return violation('INVALID_STEP', '朝会(配属)中ではありません。')
+  }
+  if (!getPlayer(state, action.playerId)) {
+    return violation('PLAYER_NOT_FOUND', `プレイヤーが見つかりません: ${action.playerId}`)
+  }
+  if (!state.readyPlayerIds.includes(action.playerId)) {
+    return violation('NOT_READY', '準備完了を宣言していません。')
+  }
+  return {
+    ...state,
+    readyPlayerIds: state.readyPlayerIds.filter((id) => id !== action.playerId),
+  }
 }
