@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs'
 import type { GameConfig } from '../src/types'
 import { playGame } from './bot'
 import { STRATEGIES, strategyByName } from './strategies'
-import type { DemandMode, DependencyMode, InflowMode } from './decks'
+import type { DemandMode, DependencyMode, InflowMode, WorkerLimitMode } from './decks'
 import type { Aggregate, GameMetrics, Strategy } from './types'
 
 interface Options {
@@ -24,6 +24,7 @@ interface Options {
   inflows: InflowMode[]
   demands: DemandMode[]
   deps: DependencyMode[]
+  limits: WorkerLimitMode[]
 }
 
 function parseArgs(argv: string[]): Options {
@@ -36,6 +37,7 @@ function parseArgs(argv: string[]): Options {
     inflows: ['experience'],
     demands: ['base'],
     deps: ['serial'],
+    limits: ['none'],
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -49,6 +51,8 @@ function parseArgs(argv: string[]): Options {
       options.demands = next().split(',').filter(Boolean) as DemandMode[]
     } else if (arg === '--deps') {
       options.deps = next().split(',').filter(Boolean) as DependencyMode[]
+    } else if (arg === '--limit') {
+      options.limits = next().split(',').filter(Boolean) as WorkerLimitMode[]
     }
     else if (arg === '--strategy') {
       const names = next().split(',')
@@ -188,17 +192,26 @@ function runCell(
   inflow: InflowMode,
   demand: DemandMode,
   deps: DependencyMode,
+  limit: WorkerLimitMode,
 ): GameMetrics[] {
   const games: GameMetrics[] = []
   for (let i = 0; i < options.games; i++) {
-    games.push(playGame(strategy, options.baseSeed + i * 7919, config, inflow, demand, deps))
+    games.push(
+      playGame(strategy, options.baseSeed + i * 7919, config, inflow, demand, deps, limit),
+    )
   }
   return games
+}
+
+const LIMIT_LABELS: Record<WorkerLimitMode, string> = {
+  none: '同時人数:上限なし',
+  brooks: '同時人数:上限あり',
 }
 
 const DEPS_LABELS: Record<DependencyMode, string> = {
   serial: '依存:直列(既定)',
   wide: '依存:並列寄り',
+  none: '依存:なし(天井の測定)',
 }
 
 const DEMAND_LABELS: Record<DemandMode, string> = {
@@ -228,9 +241,11 @@ function main(): void {
     inflow: InflowMode
     demand: DemandMode
     deps: DependencyMode
+    limit: WorkerLimitMode
   }> = []
   const sweepValues = options.sweep ? options.sweep.values : [null]
-  for (const deps of options.deps) {
+  for (const limit of options.limits) {
+   for (const deps of options.deps) {
     for (const demand of options.demands) {
       for (const inflow of options.inflows) {
         for (const value of sweepValues) {
@@ -238,19 +253,25 @@ function main(): void {
             value === null || !options.sweep
               ? undefined
               : ({ [options.sweep.key]: value } as Partial<GameConfig>)
-          const parts = [DEPS_LABELS[deps], DEMAND_LABELS[demand], INFLOW_LABELS[inflow]]
+          const parts = [
+            LIMIT_LABELS[limit],
+            DEPS_LABELS[deps],
+            DEMAND_LABELS[demand],
+            INFLOW_LABELS[inflow],
+          ]
           if (config && options.sweep) parts.push(`${String(options.sweep.key)} = ${value}`)
-          cells.push({ label: parts.join(' / '), config, inflow, demand, deps })
+          cells.push({ label: parts.join(' / '), config, inflow, demand, deps, limit })
         }
       }
     }
+   }
   }
 
   for (const cell of cells) {
     console.log(`\n══ ${cell.label} ══`)
     const rows: Aggregate[] = []
     for (const strategy of options.strategies) {
-      const games = runCell(strategy, options, cell.config, cell.inflow, cell.demand, cell.deps)
+      const games = runCell(strategy, options, cell.config, cell.inflow, cell.demand, cell.deps, cell.limit)
       all.push(...games)
       rows.push(aggregate(games))
     }

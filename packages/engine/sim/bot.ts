@@ -36,9 +36,11 @@ import {
   applyDemandMode,
   applyDependencyMode,
   applyInflowMode,
+  maxWorkersFor,
   type DemandMode,
   type DependencyMode,
   type InflowMode,
+  type WorkerLimitMode,
 } from './decks'
 
 const PLAYER_IDS = ['p1', 'p2', 'p3', 'p4']
@@ -55,6 +57,8 @@ interface Ctx {
   seenInterrupts: Set<string>
   /** 最初に立てた予定(cardId → 「フェーズ,週」)。計画遵守率の分母になる */
   firstPlan: Map<string, { phase: number; week: number }>
+  /** 同時作業人数の上限(提案Aの検証用) */
+  workerLimit: WorkerLimitMode
 }
 
 /** アクションを試す。通れば state を進め、通らなければ理由を返す */
@@ -525,7 +529,17 @@ function taskSkillOf(state: GameState, cardId: string): SkillKind | null {
 function assignWeek(ctx: Ctx): void {
   const state = () => ctx.state
   const pledged = new Map<string, number>()
+  const workers = new Map<string, number>()
   let productive = 0
+
+  /** その仕事にあと何人座れるか(提案A:ブルックスの法則) */
+  const seatsLeft = (option: WorkOption): number => {
+    const cardId =
+      option.target.kind === 'slot' ? option.target.slotId : (option.target as { cardId: string }).cardId
+    const max =
+      option.target.kind === 'slot' ? 1 : maxWorkersFor(state(), cardId, ctx.workerLimit)
+    return max - (workers.get(option.key) ?? 0)
+  }
 
   // 依存遅延の実害:今週の予定なのにブロック中で着手できないタスク(RULES.md §6-3)
   for (const task of state().board) {
@@ -542,6 +556,7 @@ function assignWeek(ctx: Ctx): void {
     for (const option of options) {
       const already = pledged.get(option.key) ?? 0
       if (already >= option.remaining) continue
+      if (seatsLeft(option) <= 0) continue
       const contribution =
         option.target.kind === 'slot'
           ? cubesForSlot(state(), playerId, option.target.slotId)
@@ -568,6 +583,7 @@ function assignWeek(ctx: Ctx): void {
             )!,
           )
     pledged.set(best.option.key, (pledged.get(best.option.key) ?? 0) + contribution)
+    workers.set(best.option.key, (workers.get(best.option.key) ?? 0) + 1)
     return best.option
   }
 
@@ -894,6 +910,7 @@ export function playGame(
   inflow: InflowMode = 'experience',
   demand: DemandMode = 'base',
   deps: DependencyMode = 'serial',
+  workerLimit: WorkerLimitMode = 'none',
 ): GameMetrics {
   const metrics = emptyMetrics(strategy.name, seed)
   const setup = applyAction(createInitialState(), {
@@ -913,6 +930,7 @@ export function playGame(
     learnUsedThisPhase: 0,
     seenInterrupts: new Set(),
     firstPlan: new Map(),
+    workerLimit,
   }
 
   let guard = 0

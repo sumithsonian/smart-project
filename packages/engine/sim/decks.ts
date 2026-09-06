@@ -190,6 +190,8 @@ export type DependencyMode =
   | 'serial'
   /** 並列寄り:前提を「1つ手前」だけに緩め、枝を増やす */
   | 'wide'
+  /** 上限値の測定用:前提を全部外す(= 完全並行。ゲームとしては成立しないが天井が分かる) */
+  | 'none'
 
 const WIDE_PREREQS: Record<string, string[]> = {
   // デザイン系はワイヤーではなくサイトマップから始められる
@@ -211,8 +213,42 @@ const WIDE_PREREQS: Record<string, string[]> = {
 /** 依存モードに応じてタスクの前提成果物を差し替える */
 export function applyDependencyMode(state: GameState, mode: DependencyMode): GameState {
   if (mode === 'serial') return state
+  if (mode === 'none') {
+    const tasks = state.content.tasks.map((t) => ({ ...t, prerequisiteSlots: [] }))
+    return { ...state, content: { ...state.content, tasks } }
+  }
   const tasks = state.content.tasks.map((t) =>
     WIDE_PREREQS[t.id] ? { ...t, prerequisiteSlots: WIDE_PREREQS[t.id]! } : t,
   )
   return { ...state, content: { ...state.content, tasks } }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 同時作業人数の上限(提案Aの検証)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * 「1つのタスクに何人まで同時に座れるか」の上限(ブルックスの法則)。
+ * v5.1 には上限が無く、1枚に全員を集中させて即納品 → 次を解放するのが最適になっている。
+ * これがテンポの価値を跳ね上げ、Lv2 の価値・謝絶・ジレンマをまとめて殺している。
+ *
+ * 上限を入れた場合の効果を測るための、シミュレーション専用の設定。
+ */
+export type WorkerLimitMode =
+  /** 上限なし(既定) */
+  | 'none'
+  /** 見積 ≤3 は1人、≥4 は2人。割り込み・改修は1人 */
+  | 'brooks'
+
+/** そのタスクに同時に座れる人数 */
+export function maxWorkersFor(
+  state: GameState,
+  cardId: string,
+  mode: WorkerLimitMode,
+): number {
+  if (mode === 'none') return Number.POSITIVE_INFINITY
+  const card = state.content.tasks.find((t) => t.id === cardId)
+  if (!card) return 1 // 割り込みカードは1人
+  return card.estimate >= 4 ? 2 : 1
 }
