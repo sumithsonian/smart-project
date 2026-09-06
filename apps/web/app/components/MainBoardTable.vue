@@ -1,9 +1,23 @@
 <script setup lang="ts">
 /**
- * メインボード(WBS & スコア一体。rules-v4-core.md §0・§1)。
- * CS/予算トラック、フェーズ・週トラック、起点/中盤/仕上げレーン、差込レーン、休憩/学習デスク。
+ * メインボード(計画ボード & スコア。RULES.md §5・§8)。
+ * CS/予算トラック、フェーズ・週トラック、3週ローリング計画ボード、割り込みレーン、休憩/学習デスク。
+ * v4 の「起点・中盤・仕上げ」レーンは廃止し、計画ボード(PlanBoardTable)+ 依存関係に置き換えた。
  */
-const { state, dispatch, boardByLane } = useGame()
+const {
+  state,
+  dispatch,
+  interruptTasks,
+  assignmentsForTarget,
+  playerColor,
+  playerName,
+  skillIcons,
+  skillLabels,
+  selectedMeeple,
+  canPlaceAt,
+  placeSelectedAt,
+  previewForSelected,
+} = useGame()
 const { hoverZoneKey } = useTableDrag()
 
 const CS_MAX = 10
@@ -16,17 +30,11 @@ const csMarkerLeft = computed(() => (csClamped.value + 1) * CS_PITCH + CS_PITCH 
 const budgetClamped = computed(() => Math.max(0, Math.min(BUDGET_MAX, state.value.budget)))
 const budgetMarkerTop = computed(() => budgetClamped.value * BUDGET_PITCH + BUDGET_PITCH / 2)
 
-const lanes = ['start', 'middle', 'finish'] as const
-const interruptTasks = computed(() => boardByLane('interrupt'))
 const interruptEmptyCount = computed(() =>
   Math.max(0, state.value.config.interruptCapacity - interruptTasks.value.length),
 )
 
 const canAssignNow = computed(() => state.value.step === 'standup' && !state.value.pendingEvent)
-
-function amenityGlow(zoneKey: string) {
-  return hoverZoneKey.value === zoneKey
-}
 
 const extraBillingLeft = computed(
   () => state.value.config.extraBillingPerPhase - state.value.extraBillingUsedThisPhase,
@@ -35,18 +43,25 @@ function extraBilling() {
   dispatch({ type: 'EXTRA_BILLING', playerId: state.value.pmPlayerId })
 }
 
-const { assignmentsForTarget, playerColor, playerName } = useGame()
+const skills = ['direction', 'design', 'engineering'] as const
+
+const restTarget = { kind: 'rest' } as const
+function learnTarget(skill: (typeof skills)[number]) {
+  return { kind: 'learn', skill } as const
+}
 </script>
 
 <template>
   <div class="board main-board">
     <div class="board-title">
-      メインボード — WBS &amp; スコア
-      <span class="board-sub">列の文法:起点 → 中盤 → 仕上げ(差込は列外)</span>
+      メインボード — 計画 &amp; スコア
+      <span class="board-sub">工程の順序は依存関係、時期の組み立ては計画ボードが担います</span>
     </div>
 
     <div class="main-cs-strip">
-      <div class="rail-label"><span>CS(顧客満足)トラック</span><span>CS {{ state.cs }}</span></div>
+      <div class="rail-label">
+        <span>CS(顧客満足)トラック</span><span>CS {{ state.cs }}</span>
+      </div>
       <div class="track-row">
         <span class="tcell skull">☠</span>
         <span v-for="i in CS_MAX + 1" :key="i - 1" class="tcell">{{ i - 1 }}</span>
@@ -56,27 +71,22 @@ const { assignmentsForTarget, playerColor, playerName } = useGame()
 
     <div class="main-body">
       <div class="main-content">
-        <div class="lane-headers">
-          <div class="lane-h">起点</div>
-          <span class="lane-arrow">▶</span>
-          <div class="lane-h">中盤</div>
-          <span class="lane-arrow">▶</span>
-          <div class="lane-h">仕上げ</div>
-        </div>
-        <div class="lane-subcaption">前の列にタスクが1枚以上あれば配置可(カードは動かない=計画表)</div>
-        <div class="lanes">
-          <div v-for="lane in lanes" :key="lane" class="lane-col" :class="lane">
-            <TaskCardTable v-for="t in boardByLane(lane)" :key="t.cardId" :card-id="t.cardId" />
-            <div class="card-slot-empty">タスクカードを{{ '\n' }}ここに置く</div>
-          </div>
-        </div>
+        <PlanBoardTable />
 
         <div class="interrupt-strip">
-          <span class="interrupt-label">差込レーン{{ '\n' }}(列文法の外・{{ state.config.interruptCapacity }}枠)</span>
+          <span class="interrupt-label">
+            割り込みレーン{{ '\n' }}({{ state.config.interruptCapacity }}枠・満杯であふれると CS-{{
+              state.config.overflowCs
+            }})
+          </span>
           <div class="interrupt-cards-row">
             <TaskCardTable v-for="t in interruptTasks" :key="t.cardId" :card-id="t.cardId" />
-            <div v-for="i in interruptEmptyCount" :key="'empty' + i" class="card-slot-empty interrupt small">
-              差込カードを{{ '\n' }}ここに置く
+            <div
+              v-for="i in interruptEmptyCount"
+              :key="'empty' + i"
+              class="card-slot-empty interrupt small"
+            >
+              割り込みカードを{{ '\n' }}ここに置く
             </div>
           </div>
         </div>
@@ -84,45 +94,68 @@ const { assignmentsForTarget, playerColor, playerName } = useGame()
         <div class="rest-study-row">
           <div
             class="amenity"
-            :class="{ 'dropzone-active': canAssignNow, 'dz-glow': amenityGlow('rest') }"
+            :class="{
+              'dropzone-active': canAssignNow,
+              'dz-glow': hoverZoneKey === 'rest',
+              'dz-clickable': !!selectedMeeple && canPlaceAt(restTarget).ok,
+            }"
             :data-dropzone-key="canAssignNow ? 'rest' : undefined"
+            @click="selectedMeeple && placeSelectedAt(restTarget)"
           >
             <span class="amenity-icon">🛋</span>
-            <div class="amenity-title">休憩ラウンジ<span class="muted" style="font-size:9px;font-weight:600"> 疲労-{{ state.config.restRecovery }}</span></div>
+            <div class="amenity-title">
+              休憩ラウンジ<span class="muted amenity-note"> 疲労-{{ state.config.restRecovery }}</span>
+            </div>
             <div class="footprint-row">
               <MeepleToken
-                v-for="a in assignmentsForTarget({ kind: 'rest' })"
+                v-for="a in assignmentsForTarget(restTarget)"
                 :key="a.playerId"
                 :player-id="a.playerId"
                 :color="playerColor(a.playerId)"
                 :draggable="canAssignNow && !state.readyPlayerIds.includes(a.playerId)"
                 :title="playerName(a.playerId)"
               />
-              <span v-if="assignmentsForTarget({ kind: 'rest' }).length === 0" class="footprint"><span class="fp-mark">👣</span></span>
+              <span v-if="assignmentsForTarget(restTarget).length === 0" class="footprint">
+                <span class="fp-mark">👣</span>
+              </span>
             </div>
+            <PreviewChip
+              v-if="selectedMeeple && canPlaceAt(restTarget).ok"
+              :preview="previewForSelected(restTarget)!"
+            />
           </div>
+
           <div
-            v-for="skill in (['direction', 'design', 'engineering'] as const)"
+            v-for="skill in skills"
             :key="skill"
             class="amenity"
-            :class="{ 'dropzone-active': canAssignNow, 'dz-glow': amenityGlow('learn:' + skill) }"
+            :class="{
+              'dropzone-active': canAssignNow,
+              'dz-glow': hoverZoneKey === 'learn:' + skill,
+              'dz-clickable': !!selectedMeeple && canPlaceAt(learnTarget(skill)).ok,
+            }"
             :data-dropzone-key="canAssignNow ? 'learn:' + skill : undefined"
+            @click="selectedMeeple && placeSelectedAt(learnTarget(skill))"
           >
-            <span class="amenity-icon">{{ skill === 'direction' ? '📋' : skill === 'design' ? '🎨' : '⚙' }}</span>
-            <div class="amenity-title" :style="{ color: `var(--${skill === 'direction' ? 'dir' : skill === 'design' ? 'des' : 'eng'})` }">
-              学習デスク・{{ skill === 'direction' ? 'ディレクション' : skill === 'design' ? 'デザイン' : 'エンジニアリング' }}
-            </div>
+            <span class="amenity-icon">{{ skillIcons[skill] }}</span>
+            <div class="amenity-title">学習デスク・{{ skillLabels[skill] }}</div>
             <div class="footprint-row">
               <MeepleToken
-                v-for="a in assignmentsForTarget({ kind: 'learn', skill })"
+                v-for="a in assignmentsForTarget(learnTarget(skill))"
                 :key="a.playerId"
                 :player-id="a.playerId"
                 :color="playerColor(a.playerId)"
                 :draggable="canAssignNow && !state.readyPlayerIds.includes(a.playerId)"
                 :title="playerName(a.playerId)"
               />
-              <span v-if="assignmentsForTarget({ kind: 'learn', skill }).length === 0" class="footprint"><span class="fp-mark">👣</span></span>
+              <span v-if="assignmentsForTarget(learnTarget(skill)).length === 0" class="footprint">
+                <span class="fp-mark">👣</span>
+              </span>
             </div>
+            <PreviewChip
+              v-if="selectedMeeple && canPlaceAt(learnTarget(skill)).ok"
+              :preview="previewForSelected(learnTarget(skill))!"
+            />
           </div>
         </div>
       </div>
@@ -156,17 +189,19 @@ const { assignmentsForTarget, playerColor, playerName } = useGame()
             :title="`追加請求(PM・フェーズ${state.config.extraBillingPerPhase}回まで)`"
             @click="extraBilling"
           >
-            💴 追加請求(予算+{{ state.config.extraBillingBudget }}/CS-{{ state.config.extraBillingCsCost }})
+            💴 追加請求(予算+{{ state.config.extraBillingBudget }}/CS-{{
+              state.config.extraBillingCsCost
+            }})
           </button>
         </div>
         <div class="rail-block rail-legend">
           <div class="rail-label">凡例</div>
           <div class="legend-list">
             <div>🔥 = 必要人日+1</div>
+            <div>🔒 = 前提未達でブロック中</div>
             <div>👣 = コマを置く</div>
             <div>□ = 人日キューブ置き場</div>
-            <div>🤝約束 / ✅達成</div>
-            <div>🔁 = 手戻り中</div>
+            <div>⚠ = 品質リスクあり(Lv1)</div>
             <div>🥈銀=Lv1 ／ 🥇金=Lv2</div>
           </div>
         </div>

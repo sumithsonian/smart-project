@@ -16,13 +16,13 @@ const lastLogMessage = computed(() => {
         <div class="deck-card back" style="transform: rotate(-4deg); top: 6px; left: 2px" />
         <div class="deck-card back" style="transform: rotate(2deg); top: 3px; left: 0" />
         <div class="deck-card back" style="transform: rotate(-1deg)" />
-        <div class="deck-label">イベント山札({{ state.decks.events.drawPile.length }})</div>
+        <div class="deck-label">イベント山札({{ state.decks.events.drawPile.length }}){{ '\n' }}週末に1枚</div>
       </div>
       <div class="deck-stack">
         <div class="deck-card back fire-back" style="transform: rotate(3deg); top: 5px; left: 3px" />
         <div class="deck-card back fire-back" style="transform: rotate(-2deg); top: 2px" />
         <div class="deck-card back fire-back" />
-        <div class="deck-label">炎上山札({{ state.decks.fires.drawPile.length }})</div>
+        <div class="deck-label">炎上山札({{ state.decks.fires.drawPile.length }}){{ '\n' }}週初に1枚</div>
       </div>
       <div class="discard">直近のログ<br />「{{ lastLogMessage }}」</div>
     </div>

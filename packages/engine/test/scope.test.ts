@@ -1,153 +1,233 @@
 /**
- * スコープ会議:検収条件の約束・タスク配置・レーン文法・FINISH_SCOPE(rules-v4-core.md §1-1)
+ * スコープ管理:Must / Better / 見送りとスコープ交渉(RULES.md §3。Issue #1)
  */
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
 import { isRuleViolation } from '../src/types'
-import type { RuleViolation } from '../src/types'
-import { drainPending, must, newGame } from './util'
+import { isRequirementFulfilled } from '../src/helpers'
+import {
+  addBoardTask,
+  addRequirement,
+  makeBoardTask,
+  must,
+  newGame,
+  withRequirement,
+  withSlot,
+} from './util'
 
-describe('スコープ会議:COMMIT_ACCEPTANCE', () => {
-  it('正常/二重/非公開ID/PM以外/達成済みを判別する', () => {
-    const state = newGame(1)
-    expect(state.openAcceptanceIds).toEqual(['ac-p1-reqs', 'ac-p1-map'])
+describe('要件の公開(RULES.md §3-1)', () => {
+  it('フェーズ1の要件が Must / Better と期限つきで公開される', () => {
+    const s = newGame(1)
+    expect(s.requirements.map((r) => r.requirementId)).toEqual(['rq-p1-reqs', 'rq-p1-map'])
 
-    // 正常
-    const s = must(
-      applyAction(state, { type: 'COMMIT_ACCEPTANCE', playerId: 'a', acceptanceId: 'ac-p1-reqs' }),
+    const mustReq = s.requirements.find((r) => r.requirementId === 'rq-p1-reqs')!
+    expect(mustReq.tier).toBe('must')
+    expect(mustReq.deadlinePhase).toBe(1)
+    expect(mustReq.met).toBe(false)
+    expect(mustReq.settled).toBe(false)
+
+    const betterReq = s.requirements.find((r) => r.requirementId === 'rq-p1-map')!
+    expect(betterReq.tier).toBe('better')
+    expect(betterReq.deadlinePhase).toBe(2)
+  })
+
+  it('phase:0 の追加要望カードはスコープ会議では公開されない', () => {
+    const s = newGame(1)
+    expect(s.requirements.some((r) => r.requirementId.startsWith('rq-add-'))).toBe(false)
+  })
+})
+
+describe('スコープ交渉:CHANGE_SCOPE(RULES.md §3-5)', () => {
+  it('Must → Better 化は CS を払い、回数を消費する', () => {
+    const s = newGame(2)
+    const before = s.cs
+    const next = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-reqs',
+        mode: 'demote',
+      }),
     )
-    expect(s.commitments).toEqual([
-      { acceptanceId: 'ac-p1-reqs', committedPhase: 1, graceUntilPhase: 0 },
-    ])
+    expect(next.requirements.find((r) => r.requirementId === 'rq-p1-reqs')!.tier).toBe('better')
+    expect(next.cs).toBe(before - next.config.demoteMustCs)
+    expect(next.scopeChangeUsedThisPhase).toBe(1)
+  })
 
-    // 二重(すでに約束済み)
-    const dup = applyAction(s, {
-      type: 'COMMIT_ACCEPTANCE',
+  it('Must → 見送りは dropMustCs を払う。Better → 見送りは無料', () => {
+    const s = newGame(3)
+    const dropMust = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-reqs',
+        mode: 'drop',
+      }),
+    )
+    expect(dropMust.cs).toBe(s.cs - s.config.dropMustCs)
+    expect(dropMust.requirements.find((r) => r.requirementId === 'rq-p1-reqs')!.tier).toBe(
+      'dropped',
+    )
+
+    const dropBetter = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-map',
+        mode: 'drop',
+      }),
+    )
+    expect(dropBetter.cs).toBe(s.cs)
+  })
+
+  it('期限延長は予算を払い、期限が +1 フェーズになる', () => {
+    const s = newGame(4)
+    const next = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-reqs',
+        mode: 'extend',
+      }),
+    )
+    expect(next.requirements.find((r) => r.requirementId === 'rq-p1-reqs')!.deadlinePhase).toBe(2)
+    expect(next.budget).toBe(s.budget - s.config.extendDeadlineBudget)
+  })
+
+  it('予算が足りなければ期限延長できない', () => {
+    const s = { ...newGame(5), budget: 1 }
+    const r = applyAction(s, {
+      type: 'CHANGE_SCOPE',
       playerId: 'a',
-      acceptanceId: 'ac-p1-reqs',
+      requirementId: 'rq-p1-reqs',
+      mode: 'extend',
     })
-    expect(isRuleViolation(dup) && dup.code).toBe('ALREADY_COMMITTED')
+    expect(isRuleViolation(r) && r.code).toBe('NOT_ENOUGH_BUDGET')
+  })
 
-    // 非公開ID(まだフェーズ2の条件は公開されていない)
-    const nonPublic = applyAction(s, {
-      type: 'COMMIT_ACCEPTANCE',
+  it('最終フェーズを超える期限延長はできない', () => {
+    const s = withRequirement(newGame(6), 'rq-p1-reqs', { deadlinePhase: 4 })
+    const r = applyAction(s, {
+      type: 'CHANGE_SCOPE',
       playerId: 'a',
-      acceptanceId: 'ac-p2-wire',
+      requirementId: 'rq-p1-reqs',
+      mode: 'extend',
     })
-    expect(isRuleViolation(nonPublic) && nonPublic.code).toBe('NOT_FOUND')
+    expect(isRuleViolation(r) && r.code).toBe('INVALID_TARGET')
+  })
 
-    // PM以外
-    const nonPm = applyAction(s, {
-      type: 'COMMIT_ACCEPTANCE',
+  it('自ら厳しくする方向(Better → Must、見送り → Better)は無料で回数も使わない', () => {
+    const s = newGame(7)
+    const promote = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-map',
+        mode: 'promote',
+      }),
+    )
+    expect(promote.cs).toBe(s.cs)
+    expect(promote.scopeChangeUsedThisPhase).toBe(0)
+    expect(promote.requirements.find((r) => r.requirementId === 'rq-p1-map')!.tier).toBe('must')
+
+    const dropped = withRequirement(s, 'rq-p1-map', { tier: 'dropped' })
+    const restore = must(
+      applyAction(dropped, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-map',
+        mode: 'restore',
+      }),
+    )
+    expect(restore.requirements.find((r) => r.requirementId === 'rq-p1-map')!.tier).toBe('better')
+    expect(restore.cs).toBe(s.cs)
+  })
+
+  it('Must を緩める交渉は scopeChangePerPhase 回まで', () => {
+    let s = newGame(8)
+    s = addRequirement(s, 'rq-p2-wire')
+    s = addRequirement(s, 'rq-p3-cms')
+    expect(s.config.scopeChangePerPhase).toBe(2)
+
+    s = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p1-reqs',
+        mode: 'demote',
+      }),
+    )
+    s = must(
+      applyAction(s, {
+        type: 'CHANGE_SCOPE',
+        playerId: 'a',
+        requirementId: 'rq-p2-wire',
+        mode: 'demote',
+      }),
+    )
+    const third = applyAction(s, {
+      type: 'CHANGE_SCOPE',
+      playerId: 'a',
+      requirementId: 'rq-p3-cms',
+      mode: 'demote',
+    })
+    expect(isRuleViolation(third) && third.code).toBe('LIMIT_REACHED')
+  })
+
+  it('達成済み・清算済みの要件は変更できない', () => {
+    const s = newGame(9)
+    const metState = withRequirement(s, 'rq-p1-reqs', { met: true })
+    const metResult = applyAction(metState, {
+      type: 'CHANGE_SCOPE',
+      playerId: 'a',
+      requirementId: 'rq-p1-reqs',
+      mode: 'drop',
+    })
+    expect(isRuleViolation(metResult) && metResult.code).toBe('SCOPE_LOCKED')
+
+    const settledState = withRequirement(s, 'rq-p1-reqs', { settled: true })
+    const settledResult = applyAction(settledState, {
+      type: 'CHANGE_SCOPE',
+      playerId: 'a',
+      requirementId: 'rq-p1-reqs',
+      mode: 'drop',
+    })
+    expect(isRuleViolation(settledResult) && settledResult.code).toBe('SCOPE_LOCKED')
+  })
+
+  it('PM 以外は交渉できない', () => {
+    const r = applyAction(newGame(10), {
+      type: 'CHANGE_SCOPE',
       playerId: 'b',
-      acceptanceId: 'ac-p1-map',
+      requirementId: 'rq-p1-reqs',
+      mode: 'demote',
     })
-    expect(isRuleViolation(nonPm) && nonPm.code).toBe('NOT_PM')
-
-    // すでに達成済み(局面捏造)
-    const met = { ...s, metAcceptanceIds: [...s.metAcceptanceIds, 'ac-p1-map'] }
-    const alreadyMet = applyAction(met, {
-      type: 'COMMIT_ACCEPTANCE',
-      playerId: 'a',
-      acceptanceId: 'ac-p1-map',
-    })
-    expect(isRuleViolation(alreadyMet) && alreadyMet.code).toBe('ALREADY_COMMITTED')
+    expect(isRuleViolation(r) && r.code).toBe('NOT_PM')
   })
 })
 
-describe('スコープ会議:PLACE_TASK', () => {
-  it('正常/プール外/同スロット重複/納品済みスロットを判別する', () => {
-    const state = newGame(1)
-
-    // 正常
-    const s = must(applyAction(state, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-req-light' }))
-    expect(s.board.some((b) => b.cardId === 't-req-light')).toBe(true)
-    expect(s.taskPool.includes('t-req-light')).toBe(false)
-    expect(s.lanePlacedCount.start).toBe(1)
-
-    // プール外のカード
-    const poolOut = applyAction(s, {
-      type: 'PLACE_TASK',
-      playerId: 'a',
-      cardId: 't-wireframe-light',
-    })
-    expect(isRuleViolation(poolOut) && poolOut.code).toBe('NOT_FOUND')
-
-    // 同スロット重複(requirements 向けタスクがすでに盤上)
-    const dupSlot = applyAction(s, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-req-heavy' })
-    expect(isRuleViolation(dupSlot) && dupSlot.code).toBe('INVALID_TARGET')
-    expect((dupSlot as RuleViolation).message).toContain('盤上')
-
-    // 納品済みスロット(局面捏造:sitemap を Lv1 にしておく)
-    const delivered = {
-      ...s,
-      slots: s.slots.map((sl) => (sl.slotId === 'sitemap' ? { ...sl, level: 1 as const } : sl)),
-    }
-    const deliveredResult = applyAction(delivered, {
-      type: 'PLACE_TASK',
-      playerId: 'a',
-      cardId: 't-sitemap-light',
-    })
-    expect(isRuleViolation(deliveredResult) && deliveredResult.code).toBe('INVALID_TARGET')
-    expect((deliveredResult as RuleViolation).message).toContain('納品済み')
+describe('要件の達成判定(RULES.md §3-3)', () => {
+  it('「約束」は不要:公開された要件は Lv 条件を満たせば達成扱いになる', () => {
+    let s = newGame(11)
+    s = withSlot(s, 'requirements', { level: 1 })
+    // rq-p1-reqs は requirements スロットの Lv1 要求
+    expect(isRequirementFulfilled(s, s.requirements[0]!)).toBe(true)
+    // rq-p1-map は sitemap の Lv2 要求(未納品なので未達成)
+    expect(isRequirementFulfilled(s, s.requirements[1]!)).toBe(false)
   })
 
-  it('レーン文法:middle列はstart列に1枚以上配置してから', () => {
-    const state = newGame(2)
-    const withMiddle = { ...state, taskPool: [...state.taskPool, 't-design-light'] }
-
-    const blocked = applyAction(withMiddle, {
-      type: 'PLACE_TASK',
-      playerId: 'a',
-      cardId: 't-design-light',
-    })
-    expect(isRuleViolation(blocked) && blocked.code).toBe('LANE_GRAMMAR')
-
-    let s = must(
-      applyAction(withMiddle, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-req-light' }),
+  it('手戻りカードが場にある間は達成条件を満たさない', () => {
+    let s = newGame(12)
+    s = withSlot(s, 'requirements', { level: 1 })
+    const withRework = addBoardTask(
+      s,
+      makeBoardTask('interrupt-1', {
+        interrupt: 'rework',
+        interruptEffort: 2,
+        targetSlotId: 'requirements',
+        plannedWeek: null,
+      }),
     )
-    s = must(applyAction(s, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-design-light' }))
-    expect(s.board.some((b) => b.cardId === 't-design-light')).toBe(true)
-  })
-
-  it('レーン文法:finish列はmiddle列に1枚以上配置してから', () => {
-    const state = newGame(3)
-    const withFinish = { ...state, taskPool: [...state.taskPool, 't-launch-light'] }
-
-    const blocked = applyAction(withFinish, {
-      type: 'PLACE_TASK',
-      playerId: 'a',
-      cardId: 't-launch-light',
-    })
-    expect(isRuleViolation(blocked) && blocked.code).toBe('LANE_GRAMMAR')
-
-    // 局面捏造:middle 列に配置済みということにする
-    const withMiddleCount = {
-      ...withFinish,
-      lanePlacedCount: { ...withFinish.lanePlacedCount, middle: 1 },
-    }
-    const s = must(
-      applyAction(withMiddleCount, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-launch-light' }),
-    )
-    expect(s.board.some((b) => b.cardId === 't-launch-light')).toBe(true)
-  })
-})
-
-describe('スコープ会議:FINISH_SCOPE', () => {
-  it('締めると第1週へ進み、炎上ドロー・週初イベントが発生する', () => {
-    const state = newGame(4)
-    let s = must(applyAction(state, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-req-light' }))
-    s = must(applyAction(s, { type: 'PLACE_TASK', playerId: 'a', cardId: 't-sitemap-light' }))
-    s = must(applyAction(s, { type: 'FINISH_SCOPE', playerId: 'a' }))
-
-    expect(s.step).toBe('standup')
-    expect(s.week).toBe(1)
-    expect(s.remainingFireDraws).toBe(0)
-    // 盤上にタスクがある状態での初回炎上ドローは必ずどこかに🔥が付く
-    expect(s.board.some((b) => b.fire > 0)).toBe(true)
-    expect(s.pendingEvent).not.toBeNull()
-
-    s = drainPending(s)
-    expect(s.pendingEvent).toBeNull()
+    expect(isRequirementFulfilled(withRework, withRework.requirements[0]!)).toBe(false)
   })
 })

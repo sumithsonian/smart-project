@@ -1,5 +1,5 @@
 /**
- * スマートプロジェクト ルールエンジン(v4)
+ * スマートプロジェクト ルールエンジン(v5)
  * UI・DB・ネットワークから独立した純TypeScriptパッケージ。
  */
 export * from './types'
@@ -11,7 +11,26 @@ export type { PlayerView, DeckView } from './redact'
 export { createInitialState } from './initialState'
 export { nextRandom, nextInt, shuffle } from './rng'
 export { buildDeck, drawCard, discard } from './deck'
-export { requiredCubes, checkAcceptance, hasReworkCard } from './helpers'
-export { taskLabel } from './actions/week'
+export {
+  requiredCubes,
+  estimatedCubes,
+  cubesForTask,
+  cubesForSlot,
+  capacityPenalty,
+  taskSkill,
+  isTaskBlocked,
+  unmetPrerequisites,
+  isSlotUsable,
+  hasReworkCard,
+  isRequirementFulfilled,
+  refreshRequirements,
+  weekLoad,
+  getRequirementCard,
+  getRequirement,
+} from './helpers'
+export type { WeekLoad } from './helpers'
+export { taskLabel, skillName } from './actions/week'
+export { tierLabel, weekLabel, riskLabel } from './actions/scope'
+export { interruptLabel } from './actions/events'
 
-export const ENGINE_VERSION = '0.4.0'
+export const ENGINE_VERSION = '0.5.0'

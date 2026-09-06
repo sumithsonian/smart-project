@@ -5,7 +5,7 @@ const { state } = useGame()
 
 <template>
   <div class="table-surface">
-    <div class="area-accept"><AcceptanceRow /></div>
+    <div class="area-scope"><RequirementBoard /></div>
     <div class="area-main"><MainBoardTable /></div>
     <div class="area-side">
       <ProductBoardTable />
