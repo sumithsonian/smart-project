@@ -80,6 +80,8 @@ function aggregate(games: GameMetrics[]): Aggregate {
   const declines = sum((g) => g.declines)
   const actions = sum((g) => g.totalActions)
   const deliveries = sum((g) => g.lv1Deliveries) + sum((g) => g.lv2Deliveries)
+  const weeks = sum((g) => g.weeksPlayed)
+  const tracked = sum((g) => g.trackedDeliveries)
 
   return {
     strategy: games[0]?.strategy ?? '',
@@ -102,7 +104,18 @@ function aggregate(games: GameMetrics[]): Aggregate {
     ),
     meanEffortOverrun: mean(games.map((g) => g.effortOverrun)),
     lv1Share: deliveries === 0 ? 0 : sum((g) => g.lv1Deliveries) / deliveries,
+    carryOversPerGame: mean(games.map((g) => g.carryOvers)),
     meanQualityRiskLeft: mean(games.map((g) => g.qualityRiskLeft)),
+
+    // ── 定期観測 ──
+    onTimeRate: tracked === 0 ? 0 : sum((g) => g.onTimeDeliveries) / tracked,
+    replansPerGame: mean(games.map((g) => g.replans)),
+    overloadedWeekRate: weeks === 0 ? 0 : sum((g) => g.overloadedWeeks) / weeks,
+    demandSupplyRatio: weeks === 0 ? 0 : sum((g) => g.demandSupplySum) / weeks,
+    contentionWeekRate: weeks === 0 ? 0 : sum((g) => g.contentionWeeks) / weeks,
+    specialistContentionRate:
+      weeks === 0 ? 0 : sum((g) => g.specialistContentionWeeks) / weeks,
+    forgonePerWeek: weeks === 0 ? 0 : sum((g) => g.forgoneWork) / weeks,
   }
 }
 
@@ -242,6 +255,7 @@ function main(): void {
       rows.push(aggregate(games))
     }
     printTable(rows)
+    printIndicators(rows)
     printVerdict(rows)
   }
 
@@ -250,6 +264,44 @@ function main(): void {
     console.log(`\n生データを書き出しました: ${options.jsonPath}`)
   }
   console.log(`\n所要 ${((Date.now() - started) / 1000).toFixed(1)}s`)
+}
+
+/**
+ * 定期観測の指標(RULES.md §13-6)。
+ *  ① 計画部分:計画ボードが「立てて・守って・引き直す」ものとして機能しているか
+ *  ② 実施ジレンマ:配置に悩みが生じているか(全部はできない状態になっているか)
+ */
+function printIndicators(rows: Aggregate[]): void {
+  console.log('\n── 定期観測 ① 計画の質 / ② 実施ジレンマ ──')
+  const header = [
+    '戦略',
+    '①計画遵守',
+    '①再計画/G',
+    '①過負荷週',
+    '①繰越/G',
+    '②需要/供給',
+    '②競合週',
+    '②専門家競合',
+    '②見送り/週',
+  ]
+  const body = rows.map((r) => [
+    r.strategy,
+    pct(r.onTimeRate),
+    num(r.replansPerGame, 1),
+    pct(r.overloadedWeekRate),
+    num(r.carryOversPerGame, 1),
+    num(r.demandSupplyRatio, 2),
+    pct(r.contentionWeekRate),
+    pct(r.specialistContentionRate),
+    num(r.forgonePerWeek, 2),
+  ])
+  const widths = header.map((h, i) =>
+    Math.max(displayWidth(h), ...body.map((row) => displayWidth(row[i]!))),
+  )
+  const line = (cells: string[]) => cells.map((c, i) => pad(c, widths[i]!)).join('  ')
+  console.log(line(header))
+  console.log(widths.map((w) => '─'.repeat(w)).join('  '))
+  for (const row of body) console.log(line(row))
 }
 
 /** RULES.md §13 の成功基準に対する自動判定 */
@@ -299,6 +351,21 @@ function printVerdict(rows: Aggregate[]): void {
     '⑥ 勝率が振り切れていない(混合 20〜70%)',
     mixed >= 0.2 && mixed <= 0.7,
     `混合勝率 ${pct(mixed)}(最高 ${pct(best)} / 最低 ${pct(worst)})`,
+  ])
+
+  checks.push([
+    '⑦ 計画ボードが機能している(再計画が起き、遵守率が 30〜70%)',
+    real.some((r) => r.replansPerGame >= 3 && r.onTimeRate >= 0.3 && r.onTimeRate <= 0.7),
+    `再計画 ${num(mean(real.map((r) => r.replansPerGame)), 1)}回/G / 遵守率 ${pct(
+      mean(real.map((r) => r.onTimeRate)),
+    )} / 過負荷週 ${pct(mean(real.map((r) => r.overloadedWeekRate)))}`,
+  ])
+  checks.push([
+    '⑧ 実施にジレンマがある(需要/供給 ≥ 0.9 または 競合週 ≥ 30%)',
+    real.some((r) => r.demandSupplyRatio >= 0.9 || r.contentionWeekRate >= 0.3),
+    `需要/供給 ${num(mean(real.map((r) => r.demandSupplyRatio)), 2)} / 競合週 ${pct(
+      mean(real.map((r) => r.contentionWeekRate)),
+    )} / 専門家競合 ${pct(mean(real.map((r) => r.specialistContentionRate)))}`,
   ])
 
   console.log('\n── 成功基準の判定 ──')

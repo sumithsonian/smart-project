@@ -60,6 +60,11 @@ export interface Strategy {
   renegotiateMusts: boolean
   /** 極端戦略の検証用:Must も含めて可能な限り見送る */
   dropMusts?: boolean
+  /**
+   * 土台を守る:後続タスクの前提になっている成果物は、要件が求めていなくても Lv2 で納める。
+   * RULES.md §2-4-6(粗い土台は後続を重くする)が判断を変える力を持つかを測るためのふるまい。
+   */
+  protectFoundations?: boolean
 }
 
 /** 1ゲームの計測結果 */
@@ -104,6 +109,26 @@ export interface GameMetrics {
   /** 未完了で翌週へ繰り越された回数 */
   carryOvers: number
 
+  // ── 計画の質(定期観測①:計画部分は機能しているか)──
+  /** 納品したタスクのうち、最初に立てた予定週どおりに終わった数 */
+  onTimeDeliveries: number
+  /** 予定週を追跡できた納品数(分母) */
+  trackedDeliveries: number
+  /** 再計画で予定週を動かした回数 */
+  replans: number
+  /** いずれかの系統で予定工数 > 供給能力 だった週(=無理な計画を選んだ週) */
+  overloadedWeeks: number
+
+  // ── 実施ジレンマ(定期観測②:置き場所で悩みが生じているか)──
+  /** 週ごとの「着手可能な残り人日 / チーム供給人日」の合計(平均を取るため) */
+  demandSupplySum: number
+  /** 需要が供給を超えた週(全部はできない=ジレンマがある週) */
+  contentionWeeks: number
+  /** いずれかの系統で needs > その系統の供給 だった週(専門家の取り合い。#7) */
+  specialistContentionWeeks: number
+  /** 着手可能だったのに誰も座らなかった仕事の延べ数 */
+  forgoneWork: number
+
   // ── 品質と見積(Issue #3 / #5) ──
   /** Lv1 で納品した数(= 品質リスクを作った数) */
   lv1Deliveries: number
@@ -140,6 +165,23 @@ export interface Aggregate {
   meanEffortOverrun: number
   lv1Share: number
   meanQualityRiskLeft: number
+  carryOversPerGame: number
+
+  // ── 定期観測 ──
+  /** ① 計画遵守率:最初の予定週どおりに納品できた割合 */
+  onTimeRate: number
+  /** ① 再計画回数/ゲーム */
+  replansPerGame: number
+  /** ① 過負荷週の割合(無理な計画を選んだ週) */
+  overloadedWeekRate: number
+  /** ② 需要/供給 比(1 を超えると「全部はできない」) */
+  demandSupplyRatio: number
+  /** ② 需要が供給を超えた週の割合 */
+  contentionWeekRate: number
+  /** ② 専門家の取り合いが起きた週の割合 */
+  specialistContentionRate: number
+  /** ② 見送られた仕事/週 */
+  forgonePerWeek: number
 }
 
 /** 1条件ぶんの実行設定 */

@@ -22,11 +22,14 @@ import { isRuleViolation } from '../src/types'
 import { applyAction } from '../src/applyAction'
 import { createInitialState } from '../src/initialState'
 import {
+  capacityPenalty,
   cubesForSlot,
   cubesForTask,
   isSlotUsable,
   isTaskBlocked,
   requiredCubes,
+  taskSkill,
+  weekLoad,
 } from '../src/helpers'
 import type { GameMetrics, Strategy } from './types'
 import {
@@ -50,6 +53,8 @@ interface Ctx {
   learnUsedThisPhase: number
   /** 直前に観測した board の割り込み ID(発生・解消のカウント用) */
   seenInterrupts: Set<string>
+  /** 最初に立てた予定(cardId → 「フェーズ,週」)。計画遵守率の分母になる */
+  firstPlan: Map<string, { phase: number; week: number }>
 }
 
 /** アクションを試す。通れば state を進め、通らなければ理由を返す */
@@ -155,7 +160,10 @@ function pickTaskForSlot(
     .filter((c): c is TaskCard => !!c && c.slot === slotId)
   if (candidates.length === 0) return undefined
 
-  const needsLv2 = wantLevel === 2 || strategy.quality === 'polish'
+  const needsLv2 =
+    wantLevel === 2 ||
+    strategy.quality === 'polish' ||
+    (strategy.protectFoundations === true && needsLevel2(ctx.state, slotId, strategy))
   const lv2Capable = candidates.filter((c) => c.maxLevel === 2)
   const pool = needsLv2 && lv2Capable.length > 0 ? lv2Capable : candidates
 
@@ -207,12 +215,17 @@ function planForSlot(ctx: Ctx, slotId: string, wantLevel: 1 | 2, depth = 0): voi
   }
 
   const week = earliestWeek(ctx, card)
-  tryAct(ctx, {
-    type: 'PLAN_TASK',
-    playerId: ctx.state.pmPlayerId,
-    cardId: card.id,
-    week,
-  })
+  if (
+    tryAct(ctx, {
+      type: 'PLAN_TASK',
+      playerId: ctx.state.pmPlayerId,
+      cardId: card.id,
+      week,
+    }) === null &&
+    week !== null
+  ) {
+    ctx.firstPlan.set(card.id, { phase: ctx.state.phase, week })
+  }
 }
 
 /** 計画ボードを組む(スコープ会議・週末の再計画で共通) */
@@ -264,6 +277,7 @@ function buildAhead(ctx: Ctx): void {
     ) {
       return
     }
+    if (week !== null) ctx.firstPlan.set(candidate.id, { phase: ctx.state.phase, week })
   }
 }
 
@@ -276,7 +290,11 @@ function replan(ctx: Ctx): void {
     if (!card) continue
     const want = earliestWeek(ctx, card)
     if (want !== null && task.plannedWeek !== want) {
-      tryAct(ctx, { type: 'MOVE_TASK', playerId: pm, cardId: task.cardId, week: want })
+      if (
+        tryAct(ctx, { type: 'MOVE_TASK', playerId: pm, cardId: task.cardId, week: want }) === null
+      ) {
+        ctx.metrics.replans++
+      }
     }
   }
   planTasks(ctx)
@@ -370,15 +388,17 @@ function workOptions(ctx: Ctx): WorkOption[] {
     const wantsLv2 =
       card.maxLevel === 2 &&
       strategy.quality !== 'fast' &&
-      needsLevel2(state, card.slot)
+      needsLevel2(state, card.slot, strategy)
     if (wantsLv2) {
       const overshootLeft =
         requiredCubes(state, task) + state.config.qualityOvershoot - task.cubes
       if (overshootLeft > 0) {
+        // 積み増しは「同じ週に人を集中させれば納品を遅らせずに Lv2 にできる」道でもある。
+        // 優先度を下げすぎると品質戦略が人を集められず、不当に弱く見えるので控えめな減点にする
         options.push({
           key: `task:${task.cardId}`,
           target: { kind: 'task', cardId: task.cardId },
-          priority: urgency - 25,
+          priority: urgency - (strategy.quality === 'polish' ? 5 : 15),
           remaining: overshootLeft,
         })
       }
@@ -388,7 +408,7 @@ function workOptions(ctx: Ctx): WorkOption[] {
   // 改修:Lv2 を求められている Lv1 スロット
   for (const slot of state.slots) {
     if (slot.level !== 1) continue
-    if (!needsLevel2(state, slot.slotId)) continue
+    if (!needsLevel2(state, slot.slotId, strategy)) continue
     const remaining = state.config.upgradeCost - slot.upgradeCubes
     if (remaining <= 0) continue
     options.push({
@@ -402,13 +422,29 @@ function workOptions(ctx: Ctx): WorkOption[] {
   return options
 }
 
-/** そのスロットに Lv2 を求める未達要件があるか */
-function needsLevel2(state: GameState, slotId: string): boolean {
-  return state.requirements.some((req) => {
+/**
+ * そのスロットを Lv2 にする理由があるか。
+ *  ① 要件が Lv2 を求めている
+ *  ② 「土台を守る」戦略で、そのスロットが未着手の後続タスクの前提になっている
+ *     (RULES.md §2-4-6:粗い土台は後続の必要人日を増やす)
+ */
+function needsLevel2(state: GameState, slotId: string, strategy?: Strategy): boolean {
+  const required = state.requirements.some((req) => {
     if (req.settled || req.tier === 'dropped') return false
     const card = state.content.requirements.find((r) => r.id === req.requirementId)
     return !!card && card.slot === slotId && card.level === 2
   })
+  if (required) return true
+  if (!strategy?.protectFoundations) return false
+  if (state.config.qualityRiskPrereqPenalty <= 0) return false
+  // まだ作っていないスロットのうち、このスロットを前提にするものが何本あるか
+  const dependents = state.content.tasks.filter((t) => {
+    if (!t.prerequisiteSlots.includes(slotId)) return false
+    const slot = state.slots.find((s) => s.slotId === t.slot)
+    return !slot || slot.level === 0
+  })
+  // 同じスロット向けの複数の道を1本と数える
+  return new Set(dependents.map((t) => t.slot)).size >= 1
 }
 
 /** 学習する系統(いちばん需要があって、まだ伸ばせるもの) */
@@ -427,6 +463,64 @@ function learnTarget(ctx: Ctx, playerId: string): SkillKind | null {
   return order[0] ?? null
 }
 
+/**
+ * 定期観測(RULES.md §13-6)。朝会の頭で、その週の
+ *  ① 計画の質:無理な計画(過負荷)を選んでいるか
+ *  ② 実施ジレンマ:着手可能な仕事がチームの供給を超えているか、専門家が取り合いになっているか
+ * を記録する。
+ */
+function observeWeek(ctx: Ctx, options: WorkOption[]): void {
+  const state = ctx.state
+  const skills = ['direction', 'design', 'engineering'] as const
+
+  // ── ① 計画:いずれかの系統で「予定工数 > 供給能力」の週(§5-2 の過負荷)──
+  const load = weekLoad(state, state.week)
+  if (skills.some((skill) => load.planned[skill] > load.capacity[skill])) {
+    ctx.metrics.overloadedWeeks++
+  }
+
+  // ── ② ジレンマ:着手可能な残り人日 対 チームの供給人日 ──
+  // 供給の上限は「各自が最も得意な仕事に就いた場合」= スキルの最大値の合計
+  const supply = state.players.reduce(
+    (sum, p) =>
+      sum +
+      Math.max(0, Math.max(p.skills.direction, p.skills.design, p.skills.engineering) -
+        capacityPenalty(state, p)),
+    0,
+  )
+  const demand = options.reduce((sum, o) => sum + o.remaining, 0)
+  if (supply > 0) {
+    ctx.metrics.demandSupplySum += demand / supply
+    if (demand > supply) ctx.metrics.contentionWeeks++
+  }
+
+  // ── ② 専門家の取り合い(#7):系統ごとに需要と供給を比べる ──
+  const demandBySkill: Record<(typeof skills)[number], number> = {
+    direction: 0,
+    design: 0,
+    engineering: 0,
+  }
+  for (const option of options) {
+    let skill: SkillKind | null = null
+    if (option.target.kind === 'slot') skill = getSlotDefSkill(state, option.target.slotId)
+    else if (option.target.kind === 'task') skill = taskSkillOf(state, option.target.cardId)
+    if (skill) demandBySkill[skill] += option.remaining
+  }
+  const supplyBySkill = (skill: (typeof skills)[number]) =>
+    state.players.reduce((sum, p) => sum + Math.max(0, p.skills[skill] - capacityPenalty(state, p)), 0)
+  if (skills.some((skill) => demandBySkill[skill] > supplyBySkill(skill))) {
+    ctx.metrics.specialistContentionWeeks++
+  }
+}
+
+function getSlotDefSkill(state: GameState, slotId: string): SkillKind | null {
+  return state.content.slots.find((s) => s.id === slotId)?.skill ?? null
+}
+function taskSkillOf(state: GameState, cardId: string): SkillKind | null {
+  const task = state.board.find((t) => t.cardId === cardId)
+  return task ? taskSkill(state, task) : null
+}
+
 /** 1週ぶんの配属を決める */
 function assignWeek(ctx: Ctx): void {
   const state = () => ctx.state
@@ -438,7 +532,9 @@ function assignWeek(ctx: Ctx): void {
     if (task.interrupt || task.plannedWeek !== state().week) continue
     if (isTaskBlocked(state(), task)) ctx.metrics.blockedPlanned++
   }
-  if (workOptions(ctx).length === 0) ctx.metrics.noWorkWeeks++
+  const optionsAtStart = workOptions(ctx)
+  if (optionsAtStart.length === 0) ctx.metrics.noWorkWeeks++
+  observeWeek(ctx, optionsAtStart)
 
   const takeOption = (playerId: string): WorkOption | null => {
     const options = workOptions(ctx)
@@ -540,6 +636,11 @@ function assignWeek(ctx: Ctx): void {
   }
 
   if (productive === 0) ctx.metrics.idleWeeks++
+
+  // ② 着手可能だったのに誰も座らなかった仕事(選ばなかった道の数)
+  for (const option of workOptions(ctx)) {
+    if ((pledged.get(option.key) ?? 0) === 0) ctx.metrics.forgoneWork++
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -576,7 +677,7 @@ function deliverTasks(ctx: Ctx): void {
         const wantLv2 =
           card.maxLevel === 2 &&
           ctx.strategy.quality !== 'fast' &&
-          needsLevel2(ctx.state, card.slot)
+          needsLevel2(ctx.state, card.slot, ctx.strategy)
         const hasOvershoot = task.cubes >= needed + ctx.state.config.qualityOvershoot
         const lastWeek = ctx.state.week >= ctx.state.config.roundsPerPhase
         if (wantLv2 && !hasOvershoot && !lastWeek) continue
@@ -588,9 +689,17 @@ function deliverTasks(ctx: Ctx): void {
         if (ctx.state.budget < card.cost) continue
 
         const level = hasOvershoot && card.maxLevel === 2 ? 2 : 1
+        const planned = ctx.firstPlan.get(task.cardId)
         if (tryAct(ctx, { type: 'DELIVER_TASK', cardId: task.cardId }) === null) {
           if (level === 2) ctx.metrics.lv2Deliveries++
           else ctx.metrics.lv1Deliveries++
+          // ① 計画遵守:最初に立てた予定週のうちに納品できたか
+          if (planned) {
+            ctx.metrics.trackedDeliveries++
+            if (planned.phase === ctx.state.phase && planned.week >= ctx.state.week) {
+              ctx.metrics.onTimeDeliveries++
+            }
+          }
           progress = true
         }
         continue
@@ -611,7 +720,7 @@ function usePolish(ctx: Ctx): void {
     if (member?.ability !== 'polish') continue
     if (player.abilityUsedPhase === ctx.state.phase) continue
     const target = ctx.state.slots.find(
-      (s) => s.level === 1 && needsLevel2(ctx.state, s.slotId),
+      (s) => s.level === 1 && needsLevel2(ctx.state, s.slotId, ctx.strategy),
     )
     if (!target) continue
     if (tryAct(ctx, { type: 'USE_ABILITY', playerId: player.id, slotId: target.slotId }) === null) {
@@ -760,6 +869,14 @@ function emptyMetrics(strategy: string, seed: number): GameMetrics {
     totalActions: 0,
     idleWeeks: 0,
     carryOvers: 0,
+    onTimeDeliveries: 0,
+    trackedDeliveries: 0,
+    replans: 0,
+    overloadedWeeks: 0,
+    demandSupplySum: 0,
+    contentionWeeks: 0,
+    specialistContentionWeeks: 0,
+    forgoneWork: 0,
     lv1Deliveries: 0,
     lv2Deliveries: 0,
     upgrades: 0,
@@ -795,6 +912,7 @@ export function playGame(
     measured: new Set(),
     learnUsedThisPhase: 0,
     seenInterrupts: new Set(),
+    firstPlan: new Map(),
   }
 
   let guard = 0

@@ -104,9 +104,10 @@ export function unmetPrerequisites(state: GameState, task: BoardTask): string[] 
 
 /**
  * 盤上タスクの必要工数(RULES.md §2-2)。
- *   (実工数が公開済みなら実工数 / 未公開なら見積工数) + 🔥 - 恒久減、最低 1
+ *   (実工数が公開済みなら実工数 / 未公開なら見積工数)
+ *   + 🔥 + 品質リスクのある前提の数 × qualityRiskPrereqPenalty - 恒久減、最低 1
  * 差し込みは interruptEffort が見積=実工数(振れ幅なし)。
- * 品質リスクのあるスロットへの手戻りは +qualityRiskEffortPenalty(RULES.md §2-4)。
+ * 品質リスクのあるスロットへの手戻りは +qualityRiskEffortPenalty(RULES.md §2-4-5)。
  */
 export function requiredCubes(state: GameState, task: BoardTask): number {
   let base: number
@@ -118,15 +119,36 @@ export function requiredCubes(state: GameState, task: BoardTask): number {
     }
   } else {
     base = task.actualEffort ?? getTaskCard(state.content, task.cardId)?.estimate ?? 0
+    base += riskyPrerequisiteCount(state, task) * state.config.qualityRiskPrereqPenalty
   }
   return Math.max(1, base + task.fire - task.effortReduction)
 }
 
-/** 見積ベースの必要工数(実工数が未公開のときの表示用) */
+/**
+ * 前提成果物のうち、品質リスクが付いているものの数(RULES.md §2-4-6)。
+ * 雑な土台の上に積むぶん、このタスクは重くなる。前提が Lv2 になれば 0 に戻る。
+ */
+export function riskyPrerequisiteCount(state: GameState, task: BoardTask): number {
+  if (task.interrupt) return 0
+  const card = getTaskCard(state.content, task.cardId)
+  if (!card) return 0
+  return card.prerequisiteSlots.filter((slotId) => getSlotState(state, slotId)?.qualityRisk).length
+}
+
+/** 品質リスクのある前提成果物のスロットID一覧(UI 表示用) */
+export function riskyPrerequisites(state: GameState, task: BoardTask): string[] {
+  if (task.interrupt) return []
+  const card = getTaskCard(state.content, task.cardId)
+  if (!card) return []
+  return card.prerequisiteSlots.filter((slotId) => getSlotState(state, slotId)?.qualityRisk)
+}
+
+/** 見積ベースの必要工数(実工数が未公開のときの表示用。前提リスクの増加は含む) */
 export function estimatedCubes(state: GameState, task: BoardTask): number {
   if (task.interrupt) return requiredCubes(state, task)
   const estimate = getTaskCard(state.content, task.cardId)?.estimate ?? 0
-  return Math.max(1, estimate + task.fire - task.effortReduction)
+  const risky = riskyPrerequisiteCount(state, task) * state.config.qualityRiskPrereqPenalty
+  return Math.max(1, estimate + risky + task.fire - task.effortReduction)
 }
 
 /** 割り込み/通常タスクに対応するのに必要な系統(null = 指定なし・最高スキルで対応) */

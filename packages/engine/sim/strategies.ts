@@ -42,6 +42,18 @@ export const STRATEGIES: Strategy[] = [
     renegotiateMusts: false,
   },
   {
+    name: 'foundationFirst',
+    description: '土台を守る:後続の前提になる成果物は要件が求めなくても Lv2 で納める(§2-4-6 の検証)',
+    betters: 'opportunistic',
+    interrupts: 'nearOverflow',
+    decline: 'nearOverflow',
+    quality: 'requirement',
+    learnPerPhase: 1,
+    useOvertime: true,
+    renegotiateMusts: true,
+    protectFoundations: true,
+  },
+  {
     name: 'growthFirst',
     description: '育成先行:序盤に学習へ枠を割いて後半の速度を買う(v4.1 の最強戦略)',
     betters: 'opportunistic',
