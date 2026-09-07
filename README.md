@@ -75,6 +75,7 @@ pnpm --filter @smart-project/engine sim -- --sweep mustMissCs=1,2,3
 pnpm --filter @smart-project/engine sim -- --inflow experience,triage,pressure
 pnpm --filter @smart-project/engine sim -- --demand base,high
 pnpm --filter @smart-project/engine sim -- --deps serial,wide
+pnpm --filter @smart-project/engine sim -- --foundation off,on,early --foundation-amount 1,2,3
 ```
 
 結果と所見は **[RULES.md §13](docs/RULES.md)** にまとめています。要点:

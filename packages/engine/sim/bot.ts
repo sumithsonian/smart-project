@@ -42,6 +42,13 @@ import {
   type InflowMode,
   type WorkerLimitMode,
 } from './decks'
+import {
+  applyFoundationBonuses,
+  foundationLv2Count,
+  foundationSlots,
+  type FoundationApplied,
+  type FoundationMode,
+} from './foundation'
 
 const PLAYER_IDS = ['p1', 'p2', 'p3', 'p4']
 
@@ -59,6 +66,12 @@ interface Ctx {
   firstPlan: Map<string, { phase: number; week: number }>
   /** 同時作業人数の上限(提案Aの検証用) */
   workerLimit: WorkerLimitMode
+  /** 基盤成果物の完成ボーナス(v6 提案 §5 の検証用) */
+  foundation: FoundationMode
+  /** 基盤ボーナスの強さ(必要工数の恒久減) */
+  foundationAmount: number
+  /** すでにボーナスを配ったタスク(二重適用の防止) */
+  foundationApplied: FoundationApplied
 }
 
 /** アクションを試す。通れば state を進め、通らなければ理由を返す */
@@ -239,6 +252,10 @@ function planTasks(ctx: Ctx): void {
     if (!card) continue
     planForSlot(ctx, card.slot, card.level)
   }
+  // エンジンビルド:要件と関係なく、基盤成果物を Lv2 まで取りにいく(v6 提案 §5)
+  for (const slotId of ctx.strategy.engineSlots ?? []) {
+    planForSlot(ctx, slotId, 2)
+  }
   buildAhead(ctx)
 }
 
@@ -327,6 +344,14 @@ function slotUrgency(state: GameState, slotId: string, strategy: Strategy): numb
     else {
       const base = strategy.betters === 'chase' ? 75 : 55
       best = Math.max(best, dueNow ? base : base - 10)
+    }
+  }
+  // 基盤成果物は要件に紐づかないので、緊急度を自前で持たせる。
+  // **序盤ほど高い**:早く建てるほど恩恵を受ける週数が長い(エンジンビルドの本質)
+  if (strategy.engineSlots?.includes(slotId)) {
+    const slot = state.slots.find((s) => s.slotId === slotId)
+    if (!slot || slot.level < 2) {
+      best = Math.max(best, state.phase <= 2 ? 70 : 45)
     }
   }
   return best
@@ -439,6 +464,7 @@ function needsLevel2(state: GameState, slotId: string, strategy?: Strategy): boo
     return !!card && card.slot === slotId && card.level === 2
   })
   if (required) return true
+  if (strategy?.engineSlots?.includes(slotId)) return true
   if (!strategy?.protectFoundations) return false
   if (state.config.qualityRiskPrereqPenalty <= 0) return false
   // まだ作っていないスロットのうち、このスロットを前提にするものが何本あるか
@@ -899,19 +925,33 @@ function emptyMetrics(strategy: string, seed: number): GameMetrics {
     effortOverrun: 0,
     effortRevealed: 0,
     qualityRiskLeft: 0,
+    foundationLv2: 0,
+    foundationBoosts: 0,
   }
 }
 
 /** 1ゲームを最後まで打って計測結果を返す */
+/**
+ * `engineSlots: ['auto']` を、そのランで有効な基盤ボーナスの対象スロットに解決する。
+ * モードを振り替えても、エンジンビルド戦略が狙う先が自動で追随する。
+ */
+function resolveStrategy(strategy: Strategy, foundation: FoundationMode): Strategy {
+  if (strategy.engineSlots?.[0] !== 'auto') return strategy
+  return { ...strategy, engineSlots: foundationSlots(foundation) }
+}
+
 export function playGame(
-  strategy: Strategy,
+  base: Strategy,
   seed: number,
   config?: Partial<GameConfig>,
   inflow: InflowMode = 'experience',
   demand: DemandMode = 'base',
   deps: DependencyMode = 'serial',
   workerLimit: WorkerLimitMode = 'none',
+  foundation: FoundationMode = 'off',
+  foundationAmount = 1,
 ): GameMetrics {
+  const strategy = resolveStrategy(base, foundation)
   const metrics = emptyMetrics(strategy.name, seed)
   const setup = applyAction(createInitialState(), {
     type: 'SETUP_GAME',
@@ -931,10 +971,23 @@ export function playGame(
     seenInterrupts: new Set(),
     firstPlan: new Map(),
     workerLimit,
+    foundation,
+    foundationAmount,
+    foundationApplied: new Set(),
   }
 
   let guard = 0
   while (ctx.state.result === null && guard++ < 400) {
+    // 基盤成果物が Lv2 になったら、対応する系統に恒久の工数減を配る(v6 提案 §5)
+    const boost = applyFoundationBonuses(
+      ctx.state,
+      ctx.foundation,
+      ctx.foundationAmount,
+      ctx.foundationApplied,
+    )
+    ctx.state = boost.state
+    metrics.foundationBoosts += boost.boosted
+
     if (ctx.state.pendingEvent !== null) {
       resolvePending(ctx)
       trackInterrupts(ctx)
@@ -1009,6 +1062,7 @@ export function playGame(
   metrics.survived = final.log.some((l) => l.message.includes('最終検収'))
   metrics.phasesPlayed = Math.max(metrics.phasesPlayed, final.phase)
   metrics.qualityRiskLeft = final.slots.filter((s) => s.qualityRisk).length
+  metrics.foundationLv2 = foundationLv2Count(final, foundation)
   metrics.trustBonuses = final.log.filter((l) => l.message.includes('信頼ボーナス')).length
   metrics.overflows = final.log.filter((l) => l.message.includes('あふれた')).length
   metrics.interruptsSpawned += metrics.overflows

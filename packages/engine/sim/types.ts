@@ -65,6 +65,15 @@ export interface Strategy {
    * RULES.md §2-4-6(粗い土台は後続を重くする)が判断を変える力を持つかを測るためのふるまい。
    */
   protectFoundations?: boolean
+  /**
+   * エンジンビルド:要件が求めていなくても、指定した成果物を **Lv2 まで作りにいく**。
+   * v6 提案 §5(基盤成果物の完成ボーナス)を能動的に狙う戦略のためのふるまい。
+   *
+   * v5.1 の `protectFoundations` は「後続の**前提**になっているスロット」しか守らないため、
+   * スタイルガイド・CMS のような**葉ノード**には届かない(実測 Lv2 到達 0.45枚/ゲーム)。
+   * ボーナスの効果を測るには、そこを狙う意思が要る。
+   */
+  engineSlots?: string[]
 }
 
 /** 1ゲームの計測結果 */
@@ -142,6 +151,12 @@ export interface GameMetrics {
   effortRevealed: number
   /** ゲーム終了時に品質リスクが残っていたスロット数 */
   qualityRiskLeft: number
+
+  // ── 基盤ボーナス(v6 提案 §5 の検証)──
+  /** ゲーム終了時に Lv2 に達していた基盤成果物の枚数(スタイルガイド / CMS)*/
+  foundationLv2: number
+  /** 基盤ボーナスの恒久工数減が乗ったタスク数 */
+  foundationBoosts: number
 }
 
 /** 集計結果 */
@@ -182,6 +197,12 @@ export interface Aggregate {
   specialistContentionRate: number
   /** ② 見送られた仕事/週 */
   forgonePerWeek: number
+
+  // ── 基盤ボーナス(v6 提案 §5)──
+  /** 基盤成果物の Lv2 到達数/ゲーム(v6 提案 §10-2 の基準⑤)*/
+  foundationLv2PerGame: number
+  /** 基盤ボーナスが乗ったタスク数/ゲーム */
+  foundationBoostsPerGame: number
 }
 
 /** 1条件ぶんの実行設定 */

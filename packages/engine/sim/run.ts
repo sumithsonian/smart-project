@@ -13,6 +13,7 @@ import type { GameConfig } from '../src/types'
 import { playGame } from './bot'
 import { STRATEGIES, strategyByName } from './strategies'
 import type { DemandMode, DependencyMode, InflowMode, WorkerLimitMode } from './decks'
+import type { FoundationMode } from './foundation'
 import type { Aggregate, GameMetrics, Strategy } from './types'
 
 interface Options {
@@ -25,6 +26,9 @@ interface Options {
   demands: DemandMode[]
   deps: DependencyMode[]
   limits: WorkerLimitMode[]
+  foundations: FoundationMode[]
+  /** 基盤ボーナスの強さ(必要工数の恒久減) */
+  foundationAmounts: number[]
 }
 
 function parseArgs(argv: string[]): Options {
@@ -38,6 +42,8 @@ function parseArgs(argv: string[]): Options {
     demands: ['base'],
     deps: ['serial'],
     limits: ['none'],
+    foundations: ['off'],
+    foundationAmounts: [1],
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -53,6 +59,10 @@ function parseArgs(argv: string[]): Options {
       options.deps = next().split(',').filter(Boolean) as DependencyMode[]
     } else if (arg === '--limit') {
       options.limits = next().split(',').filter(Boolean) as WorkerLimitMode[]
+    } else if (arg === '--foundation') {
+      options.foundations = next().split(',').filter(Boolean) as FoundationMode[]
+    } else if (arg === '--foundation-amount') {
+      options.foundationAmounts = next().split(',').map(Number).filter(Number.isFinite)
     }
     else if (arg === '--strategy') {
       const names = next().split(',')
@@ -120,6 +130,8 @@ function aggregate(games: GameMetrics[]): Aggregate {
     specialistContentionRate:
       weeks === 0 ? 0 : sum((g) => g.specialistContentionWeeks) / weeks,
     forgonePerWeek: weeks === 0 ? 0 : sum((g) => g.forgoneWork) / weeks,
+    foundationLv2PerGame: n === 0 ? 0 : sum((g) => g.foundationLv2) / n,
+    foundationBoostsPerGame: n === 0 ? 0 : sum((g) => g.foundationBoosts) / n,
   }
 }
 
@@ -193,14 +205,32 @@ function runCell(
   demand: DemandMode,
   deps: DependencyMode,
   limit: WorkerLimitMode,
+  foundation: FoundationMode,
+  foundationAmount: number,
 ): GameMetrics[] {
   const games: GameMetrics[] = []
   for (let i = 0; i < options.games; i++) {
     games.push(
-      playGame(strategy, options.baseSeed + i * 7919, config, inflow, demand, deps, limit),
+      playGame(
+        strategy,
+        options.baseSeed + i * 7919,
+        config,
+        inflow,
+        demand,
+        deps,
+        limit,
+        foundation,
+        foundationAmount,
+      ),
     )
   }
   return games
+}
+
+const FOUNDATION_LABELS: Record<FoundationMode, string> = {
+  off: '基盤ボーナス:なし',
+  on: '基盤ボーナス:提案どおり(スタイルガイド/CMS)',
+  early: '基盤ボーナス:対抗仮説(要件定義書/サイトマップ)',
 }
 
 const LIMIT_LABELS: Record<WorkerLimitMode, string> = {
@@ -242,8 +272,12 @@ function main(): void {
     demand: DemandMode
     deps: DependencyMode
     limit: WorkerLimitMode
+    foundation: FoundationMode
+    foundationAmount: number
   }> = []
   const sweepValues = options.sweep ? options.sweep.values : [null]
+  for (const foundation of options.foundations) {
+   for (const foundationAmount of options.foundationAmounts) {
   for (const limit of options.limits) {
    for (const deps of options.deps) {
     for (const demand of options.demands) {
@@ -254,16 +288,30 @@ function main(): void {
               ? undefined
               : ({ [options.sweep.key]: value } as Partial<GameConfig>)
           const parts = [
+            foundation === 'off'
+              ? FOUNDATION_LABELS[foundation]
+              : `${FOUNDATION_LABELS[foundation]}(-${foundationAmount})`,
             LIMIT_LABELS[limit],
             DEPS_LABELS[deps],
             DEMAND_LABELS[demand],
             INFLOW_LABELS[inflow],
           ]
           if (config && options.sweep) parts.push(`${String(options.sweep.key)} = ${value}`)
-          cells.push({ label: parts.join(' / '), config, inflow, demand, deps, limit })
+          cells.push({
+            label: parts.join(' / '),
+            config,
+            inflow,
+            demand,
+            deps,
+            limit,
+            foundation,
+            foundationAmount,
+          })
         }
       }
     }
+   }
+  }
    }
   }
 
@@ -271,7 +319,17 @@ function main(): void {
     console.log(`\n══ ${cell.label} ══`)
     const rows: Aggregate[] = []
     for (const strategy of options.strategies) {
-      const games = runCell(strategy, options, cell.config, cell.inflow, cell.demand, cell.deps, cell.limit)
+      const games = runCell(
+        strategy,
+        options,
+        cell.config,
+        cell.inflow,
+        cell.demand,
+        cell.deps,
+        cell.limit,
+        cell.foundation,
+        cell.foundationAmount,
+      )
       all.push(...games)
       rows.push(aggregate(games))
     }
@@ -304,6 +362,8 @@ function printIndicators(rows: Aggregate[]): void {
     '②競合週',
     '②専門家競合',
     '②見送り/週',
+    '⑤基盤Lv2/G',
+    '⑤恩恵タスク/G',
   ]
   const body = rows.map((r) => [
     r.strategy,
@@ -315,6 +375,8 @@ function printIndicators(rows: Aggregate[]): void {
     pct(r.contentionWeekRate),
     pct(r.specialistContentionRate),
     num(r.forgonePerWeek, 2),
+    num(r.foundationLv2PerGame, 2),
+    num(r.foundationBoostsPerGame, 1),
   ])
   const widths = header.map((h, i) =>
     Math.max(displayWidth(h), ...body.map((row) => displayWidth(row[i]!))),
@@ -323,6 +385,24 @@ function printIndicators(rows: Aggregate[]): void {
   console.log(line(header))
   console.log(widths.map((w) => '─'.repeat(w)).join('  '))
   for (const row of body) console.log(line(row))
+  printSpeedVsCare(rows)
+}
+
+/**
+ * v6 提案 §10-2 の基準⑦:最速戦略と丁寧戦略の勝率差。
+ * 「速く Lv1 で出す」と「土台を Lv2 で作る」が対等になれば、初めてジレンマが成立する。
+ */
+function printSpeedVsCare(rows: Aggregate[]): void {
+  const byName = new Map(rows.map((r) => [r.strategy, r]))
+  const fast = byName.get('triage') ?? byName.get('driftAlong')
+  const care = byName.get('foundationFirst')
+  if (!fast || !care) return
+  const gap = Math.abs(fast.winRate - care.winRate) * 100
+  const mark = gap <= 10 ? '✅' : gap <= 20 ? '△' : '❌'
+  console.log(
+    `\n⑦ 速さ(${fast.strategy} ${pct(fast.winRate)})vs 丁寧(${care.strategy} ${pct(care.winRate)})` +
+      ` → 差 ${gap.toFixed(1)}pt ${mark}(目標 10pt 以内。v6 提案 §10-2)`,
+  )
 }
 
 /** RULES.md §13 の成功基準に対する自動判定 */

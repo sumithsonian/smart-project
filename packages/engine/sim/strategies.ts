@@ -54,6 +54,20 @@ export const STRATEGIES: Strategy[] = [
     protectFoundations: true,
   },
   {
+    name: 'engineBuilder',
+    description:
+      'エンジンビルド:基盤成果物を序盤に Lv2 まで建て、以後の必要工数を恒久的に下げる(v6 提案 §5 の検証)',
+    betters: 'opportunistic',
+    interrupts: 'nearOverflow',
+    decline: 'nearOverflow',
+    quality: 'requirement',
+    learnPerPhase: 1,
+    useOvertime: true,
+    renegotiateMusts: true,
+    // 'auto' = そのランで有効な基盤ボーナスの対象(--foundation に追随する)
+    engineSlots: ['auto'],
+  },
+  {
     name: 'growthFirst',
     description: '育成先行:序盤に学習へ枠を割いて後半の速度を買う(v4.1 の最強戦略)',
     betters: 'opportunistic',
