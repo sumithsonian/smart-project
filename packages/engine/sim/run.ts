@@ -15,6 +15,7 @@ import { STRATEGIES, strategyByName } from './strategies'
 import type { DemandMode, DependencyMode, InflowMode, WorkerLimitMode } from './decks'
 import type { FoundationMode } from './foundation'
 import { DEFAULT_RISK, type RiskOptions } from './risk'
+import { DEFAULT_DEBT, type DebtMode, type DebtOptions, type DraftMode } from './draft'
 import type { Aggregate, GameMetrics, Strategy } from './types'
 
 interface Options {
@@ -34,6 +35,12 @@ interface Options {
   risks: boolean[]
   /** 前倒し着手1回あたりのリスクマーカー数(§7 riskOnEarlyStart) */
   earlyStartRisks: number[]
+  /** ドラフトの見え方(§3) */
+  drafts: DraftMode[]
+  /** デッキ汚染(§4) */
+  debts: DebtMode[]
+  /** Lv1 納品1件が生む負債カードの枚数(§4-1) */
+  debtLv1: number[]
 }
 
 function parseArgs(argv: string[]): Options {
@@ -51,6 +58,9 @@ function parseArgs(argv: string[]): Options {
     foundationAmounts: [1],
     risks: [false],
     earlyStartRisks: [DEFAULT_RISK.onEarlyStart],
+    drafts: ['open'],
+    debts: ['off'],
+    debtLv1: [DEFAULT_DEBT.onLv1Delivery],
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -77,6 +87,12 @@ function parseArgs(argv: string[]): Options {
         .map((v) => v === 'on' || v === 'true')
     } else if (arg === '--early-start-risk') {
       options.earlyStartRisks = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--draft') {
+      options.drafts = next().split(',').filter(Boolean) as DraftMode[]
+    } else if (arg === '--debt') {
+      options.debts = next().split(',').filter(Boolean) as DebtMode[]
+    } else if (arg === '--debt-lv1') {
+      options.debtLv1 = next().split(',').map(Number).filter(Number.isFinite)
     }
     else if (arg === '--strategy') {
       const names = next().split(',')
@@ -148,6 +164,8 @@ function aggregate(games: GameMetrics[]): Aggregate {
     foundationBoostsPerGame: n === 0 ? 0 : sum((g) => g.foundationBoosts) / n,
     riskMarkersPerGame: n === 0 ? 0 : sum((g) => g.riskMarkers) / n,
     outbreaksPerGame: n === 0 ? 0 : sum((g) => g.outbreaks) / n,
+    missingPerGame: n === 0 ? 0 : sum((g) => g.missingRevealed) / n,
+    debtPerGame: n === 0 ? 0 : sum((g) => g.debtCreated) / n,
     earlyStartRate: (() => {
       const starts = sum((g) => g.taskStarts)
       return starts === 0 ? 0 : sum((g) => g.earlyStarts) / starts
@@ -228,6 +246,9 @@ function runCell(
   foundation: FoundationMode,
   foundationAmount: number,
   risk: RiskOptions | null,
+  draft: DraftMode,
+  debt: DebtMode,
+  debtOpts: DebtOptions,
 ): GameMetrics[] {
   const games: GameMetrics[] = []
   for (let i = 0; i < options.games; i++) {
@@ -243,6 +264,9 @@ function runCell(
         foundation,
         foundationAmount,
         risk,
+        draft,
+        debt,
+        debtOpts,
       ),
     )
   }
@@ -297,8 +321,15 @@ function main(): void {
     foundation: FoundationMode
     foundationAmount: number
     risk: RiskOptions | null
+    draft: DraftMode
+    debt: DebtMode
+    debtOpts: DebtOptions
   }> = []
   const sweepValues = options.sweep ? options.sweep.values : [null]
+  for (const draft of options.drafts) {
+   for (const debt of options.debts) {
+    for (const lv1 of options.debtLv1) {
+     if (debt === 'off' && lv1 !== options.debtLv1[0]) continue
   for (const useRisk of options.risks) {
    for (const earlyStartRisk of options.earlyStartRisks) {
     if (!useRisk && earlyStartRisk !== options.earlyStartRisks[0]) continue
@@ -326,6 +357,8 @@ function main(): void {
             ? { ...DEFAULT_RISK, onEarlyStart: earlyStartRisk }
             : null
           const parts = [
+            draft === 'hidden' ? 'ドラフト:一部伏せ' : null,
+            debt === 'on' ? `デッキ汚染:あり(Lv1 ${lv1})` : null,
             useRisk ? `リスク層:あり(前倒し ${earlyStartRisk})` : 'リスク層:なし',
             foundation === 'off'
               ? FOUNDATION_LABELS[foundation]
@@ -336,8 +369,9 @@ function main(): void {
             INFLOW_LABELS[inflow],
           ]
           if (config && options.sweep) parts.push(`${String(options.sweep.key)} = ${value}`)
+          const label = parts.filter((p): p is string => p !== null).join(' / ')
           cells.push({
-            label: parts.join(' / '),
+            label,
             config,
             inflow,
             demand,
@@ -346,6 +380,9 @@ function main(): void {
             foundation,
             foundationAmount,
             risk,
+            draft,
+            debt,
+            debtOpts: { ...DEFAULT_DEBT, onLv1Delivery: lv1 },
           })
         }
       }
@@ -354,6 +391,9 @@ function main(): void {
   }
    }
   }
+   }
+  }
+    }
    }
   }
 
@@ -372,6 +412,9 @@ function main(): void {
         cell.foundation,
         cell.foundationAmount,
         cell.risk,
+        cell.draft,
+        cell.debt,
+        cell.debtOpts,
       )
       all.push(...games)
       rows.push(aggregate(games))
@@ -409,6 +452,8 @@ function printIndicators(rows: Aggregate[]): void {
     '③前倒し率',
     'リスク/G',
     '④炎上/G',
+    '抜け漏れ/G',
+    '負債/G',
   ]
   const body = rows.map((r) => [
     r.strategy,
@@ -424,6 +469,8 @@ function printIndicators(rows: Aggregate[]): void {
     pct(r.earlyStartRate),
     num(r.riskMarkersPerGame, 1),
     num(r.outbreaksPerGame, 2),
+    num(r.missingPerGame, 2),
+    num(r.debtPerGame, 1),
   ])
   const widths = header.map((h, i) =>
     Math.max(displayWidth(h), ...body.map((row) => displayWidth(row[i]!))),

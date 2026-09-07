@@ -59,6 +59,17 @@ import {
   type RiskOptions,
   type RiskTally,
 } from './risk'
+import {
+  DEFAULT_DEBT,
+  emptyDebtTally,
+  hideDraftCards,
+  revealMissingCards,
+  spawnDebtCards,
+  type DebtMode,
+  type DebtOptions,
+  type DebtTally,
+  type DraftMode,
+} from './draft'
 
 const PLAYER_IDS = ['p1', 'p2', 'p3', 'p4']
 
@@ -90,6 +101,18 @@ interface Ctx {
   weekCubes: Map<number, number>
   /** 週初から盤上にあった割り込み(放置の検出用) */
   weekInterrupts: Set<number>
+  /** ドラフトの見え方(v6 提案 §3) */
+  draft: DraftMode
+  /** 伏せ札に回っているタスクカード */
+  hiddenCards: Set<string>
+  /** デッキ汚染(v6 提案 §4) */
+  debtMode: DebtMode
+  debtOpts: DebtOptions
+  debt: DebtTally
+  /** 負債の発生元を数えるための、すでに数え終えた件数 */
+  seenOutbreaks: number
+  seenLv1: number
+  seenRelief: number
 }
 
 /** アクションを試す。通れば state を進め、通らなければ理由を返す */
@@ -971,6 +994,45 @@ function emptyMetrics(strategy: string, seed: number): GameMetrics {
     outbreaks: 0,
     earlyStarts: 0,
     taskStarts: 0,
+    missingRevealed: 0,
+    debtCreated: 0,
+    debtSpawned: 0,
+  }
+}
+
+/**
+ * 負債の発生を数える(v6 提案 §4-1)。
+ * Lv1 納品・炎上・スコープ緩和が、次フェーズに出てくる負債を積む。
+ */
+function accrueDebt(ctx: Ctx): void {
+  if (ctx.debtMode === 'off') return
+  const opts = ctx.debtOpts
+
+  // 炎上(前回数えた分からの増分)
+  const outbreaks = ctx.tally.outbreaks + ctx.tally.slotOutbreaks
+  if (outbreaks > ctx.seenOutbreaks) {
+    const added = (outbreaks - ctx.seenOutbreaks) * opts.onOutbreak
+    ctx.debt.pending += added
+    ctx.debt.created += added
+    ctx.seenOutbreaks = outbreaks
+  }
+
+  // Lv1 納品(このゲームでの累計との差分)
+  const lv1 = ctx.metrics.lv1Deliveries
+  if (lv1 > ctx.seenLv1) {
+    const added = (lv1 - ctx.seenLv1) * opts.onLv1Delivery
+    ctx.debt.pending += added
+    ctx.debt.created += added
+    ctx.seenLv1 = lv1
+  }
+
+  // スコープ緩和(Must の格下げ・見送り)
+  const relief = ctx.metrics.scopeDemotes
+  if (relief > ctx.seenRelief) {
+    const added = (relief - ctx.seenRelief) * opts.onScopeRelief
+    ctx.debt.pending += added
+    ctx.debt.created += added
+    ctx.seenRelief = relief
   }
 }
 
@@ -995,6 +1057,9 @@ export function playGame(
   foundation: FoundationMode = 'off',
   foundationAmount = 1,
   risk: RiskOptions | null = null,
+  draft: DraftMode = 'open',
+  debtMode: DebtMode = 'off',
+  debtOpts: DebtOptions = DEFAULT_DEBT,
 ): GameMetrics {
   const strategy = resolveStrategy(base, foundation)
   const metrics = emptyMetrics(strategy.name, seed)
@@ -1023,6 +1088,14 @@ export function playGame(
     tally: emptyTally(),
     weekCubes: new Map(),
     weekInterrupts: new Set(),
+    draft,
+    hiddenCards: new Set(),
+    debtMode,
+    debtOpts,
+    debt: emptyDebtTally(),
+    seenOutbreaks: 0,
+    seenLv1: 0,
+    seenRelief: 0,
   }
 
   let guard = 0
@@ -1045,7 +1118,15 @@ export function playGame(
     switch (ctx.state.step) {
       case 'scope_meeting': {
         ctx.learnUsedThisPhase = 0
+        // v6 §4-2:前フェーズに溜まった負債が、返済しきれず仕事として戻ってくる
+        ctx.state = spawnDebtCards(ctx.state, ctx.debtMode, ctx.debtOpts, ctx.debt)
+        // v6 §3-2:候補の一部が伏せ札に回る。要件定義書 Lv2 なら公開枚数が増える(§3-4)
+        const revealBonus =
+          (ctx.state.slots.find((s) => s.slotId === 'requirements')?.level ?? 0) >= 2 ? 2 : 0
+        ctx.state = hideDraftCards(ctx.state, ctx.draft, ctx.hiddenCards, revealBonus)
         negotiateScope(ctx)
+        // v6 §3-3:埋める道が無くなったスロットは「抜け漏れ」として割り込みで噴き出す
+        ctx.state = revealMissingCards(ctx.state, ctx.hiddenCards, 1, ctx.debt)
         planTasks(ctx)
         if (tryAct(ctx, { type: 'FINISH_SCOPE', playerId: ctx.state.pmPlayerId }) !== null) {
           guard = 400
@@ -1092,6 +1173,7 @@ export function playGame(
             ctx.weekInterrupts,
           )
         }
+        accrueDebt(ctx)
         const before = ctx.state.week
         if (tryAct(ctx, { type: 'END_WEEKEND', playerId: ctx.state.pmPlayerId }) !== null) {
           guard = 400
@@ -1143,6 +1225,9 @@ export function playGame(
     t.fromInterruptNeglect +
     t.fromLv1Delivery
   metrics.outbreaks = t.outbreaks + t.slotOutbreaks
+  metrics.missingRevealed = ctx.debt.missingRevealed
+  metrics.debtCreated = ctx.debt.created
+  metrics.debtSpawned = ctx.debt.spawned
   metrics.trustBonuses = final.log.filter((l) => l.message.includes('信頼ボーナス')).length
   metrics.overflows = final.log.filter((l) => l.message.includes('あふれた')).length
   metrics.interruptsSpawned += metrics.overflows

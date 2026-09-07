@@ -179,6 +179,14 @@ export interface GameMetrics {
   earlyStarts: number
   /** 着手の延べ回数(前倒し率の分母) */
   taskStarts: number
+
+  // ── ドラフトとデッキ汚染(v6 提案 §3・§4 の検証)──
+  /** 抜け漏れが発覚した数 */
+  missingRevealed: number
+  /** 生まれた負債カードの数 */
+  debtCreated: number
+  /** 盤面に出た負債カードの数 */
+  debtSpawned: number
 }
 
 /** 集計結果 */
@@ -233,6 +241,10 @@ export interface Aggregate {
   outbreaksPerGame: number
   /** 前倒し着手率(全着手に占める割合。基準③)*/
   earlyStartRate: number
+  /** 抜け漏れの発覚数/ゲーム(v6 提案 §3-3)*/
+  missingPerGame: number
+  /** 負債カードの発生数/ゲーム(v6 提案 §4)*/
+  debtPerGame: number
 }
 
 /** 1条件ぶんの実行設定 */
