@@ -668,6 +668,7 @@ capacityDownCubes: 1    // 他案件ヘルプ:次週に積むキューブ減
 | 文書 | 位置づけ |
 |---|---|
 | **`docs/RULES.md`(本書)** | **ルールの単一の正。** 実装はこれに従う |
+| `docs/rules-v6-proposal.md` | **討議中。** v6 の再設計提案(§13-7 の原因 A・B への対策)。**現行ルールではない** |
 | `docs/rules-v4-core.md` | **履歴。** v4 の再設計提案。v5 の土台だが現行ルールではない |
 | `docs/rules-v3-proposal.md` | **履歴。** v3 討議ドラフト |
 | `docs/rules-v2-proposal.md` | **履歴。** v2 討議ドラフト |
