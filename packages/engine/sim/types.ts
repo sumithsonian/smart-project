@@ -74,6 +74,13 @@ export interface Strategy {
    * ボーナスの効果を測るには、そこを狙う意思が要る。
    */
   engineSlots?: string[]
+  /**
+   * 前倒し着手(v6 提案 §2-3)の使い方。`allowEarlyStart` が有効なときだけ効く。
+   *  - `never`:使わない(v5.1 と同じふるまい)
+   *  - `whenIdle`:他にやることが無い週だけ使う(想定している使われ方)
+   *  - `eager`:着手できるなら前倒しでも積極的に進める
+   */
+  earlyStart?: 'never' | 'whenIdle' | 'eager'
 }
 
 /** 1ゲームの計測結果 */
@@ -157,6 +164,21 @@ export interface GameMetrics {
   foundationLv2: number
   /** 基盤ボーナスの恒久工数減が乗ったタスク数 */
   foundationBoosts: number
+
+  // ── リスクマーカーと炎上(v6 提案 §2 の検証)──
+  /** 置かれたリスクマーカーの総数 */
+  riskMarkers: number
+  /** 発生条件の内訳 */
+  riskFromOverload: number
+  riskFromEarlyStart: number
+  riskFromOverrun: number
+  riskFromInterruptNeglect: number
+  /** 炎上した回数 */
+  outbreaks: number
+  /** 前倒しで着手した延べタスク週 */
+  earlyStarts: number
+  /** 着手の延べ回数(前倒し率の分母) */
+  taskStarts: number
 }
 
 /** 集計結果 */
@@ -203,6 +225,14 @@ export interface Aggregate {
   foundationLv2PerGame: number
   /** 基盤ボーナスが乗ったタスク数/ゲーム */
   foundationBoostsPerGame: number
+
+  // ── リスクマーカー(v6 提案 §2)──
+  /** リスクマーカー総数/ゲーム */
+  riskMarkersPerGame: number
+  /** 炎上回数/ゲーム(v6 提案 §10-2 の基準④)*/
+  outbreaksPerGame: number
+  /** 前倒し着手率(全着手に占める割合。基準③)*/
+  earlyStartRate: number
 }
 
 /** 1条件ぶんの実行設定 */

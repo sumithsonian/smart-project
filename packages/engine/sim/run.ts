@@ -14,6 +14,7 @@ import { playGame } from './bot'
 import { STRATEGIES, strategyByName } from './strategies'
 import type { DemandMode, DependencyMode, InflowMode, WorkerLimitMode } from './decks'
 import type { FoundationMode } from './foundation'
+import { DEFAULT_RISK, type RiskOptions } from './risk'
 import type { Aggregate, GameMetrics, Strategy } from './types'
 
 interface Options {
@@ -29,6 +30,10 @@ interface Options {
   foundations: FoundationMode[]
   /** 基盤ボーナスの強さ(必要工数の恒久減) */
   foundationAmounts: number[]
+  /** v6 のリスクマーカー層(§2)を入れるか */
+  risks: boolean[]
+  /** 前倒し着手1回あたりのリスクマーカー数(§7 riskOnEarlyStart) */
+  earlyStartRisks: number[]
 }
 
 function parseArgs(argv: string[]): Options {
@@ -44,6 +49,8 @@ function parseArgs(argv: string[]): Options {
     limits: ['none'],
     foundations: ['off'],
     foundationAmounts: [1],
+    risks: [false],
+    earlyStartRisks: [DEFAULT_RISK.onEarlyStart],
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -63,6 +70,13 @@ function parseArgs(argv: string[]): Options {
       options.foundations = next().split(',').filter(Boolean) as FoundationMode[]
     } else if (arg === '--foundation-amount') {
       options.foundationAmounts = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--risk') {
+      options.risks = next()
+        .split(',')
+        .filter(Boolean)
+        .map((v) => v === 'on' || v === 'true')
+    } else if (arg === '--early-start-risk') {
+      options.earlyStartRisks = next().split(',').map(Number).filter(Number.isFinite)
     }
     else if (arg === '--strategy') {
       const names = next().split(',')
@@ -132,6 +146,12 @@ function aggregate(games: GameMetrics[]): Aggregate {
     forgonePerWeek: weeks === 0 ? 0 : sum((g) => g.forgoneWork) / weeks,
     foundationLv2PerGame: n === 0 ? 0 : sum((g) => g.foundationLv2) / n,
     foundationBoostsPerGame: n === 0 ? 0 : sum((g) => g.foundationBoosts) / n,
+    riskMarkersPerGame: n === 0 ? 0 : sum((g) => g.riskMarkers) / n,
+    outbreaksPerGame: n === 0 ? 0 : sum((g) => g.outbreaks) / n,
+    earlyStartRate: (() => {
+      const starts = sum((g) => g.taskStarts)
+      return starts === 0 ? 0 : sum((g) => g.earlyStarts) / starts
+    })(),
   }
 }
 
@@ -207,6 +227,7 @@ function runCell(
   limit: WorkerLimitMode,
   foundation: FoundationMode,
   foundationAmount: number,
+  risk: RiskOptions | null,
 ): GameMetrics[] {
   const games: GameMetrics[] = []
   for (let i = 0; i < options.games; i++) {
@@ -221,6 +242,7 @@ function runCell(
         limit,
         foundation,
         foundationAmount,
+        risk,
       ),
     )
   }
@@ -274,8 +296,12 @@ function main(): void {
     limit: WorkerLimitMode
     foundation: FoundationMode
     foundationAmount: number
+    risk: RiskOptions | null
   }> = []
   const sweepValues = options.sweep ? options.sweep.values : [null]
+  for (const useRisk of options.risks) {
+   for (const earlyStartRisk of options.earlyStartRisks) {
+    if (!useRisk && earlyStartRisk !== options.earlyStartRisks[0]) continue
   for (const foundation of options.foundations) {
    for (const foundationAmount of options.foundationAmounts) {
   for (const limit of options.limits) {
@@ -283,11 +309,24 @@ function main(): void {
     for (const demand of options.demands) {
       for (const inflow of options.inflows) {
         for (const value of sweepValues) {
-          const config =
+          let config =
             value === null || !options.sweep
               ? undefined
               : ({ [options.sweep.key]: value } as Partial<GameConfig>)
+          if (useRisk) {
+            // v6 §6:週初の炎上ドローを止め、炎上はリスク層が裁く。前倒し着手を解禁する
+            config = {
+              firePerRound: 0,
+              fireOutbreakThreshold: 99,
+              allowEarlyStart: true,
+              ...(config ?? {}),
+            }
+          }
+          const risk: RiskOptions | null = useRisk
+            ? { ...DEFAULT_RISK, onEarlyStart: earlyStartRisk }
+            : null
           const parts = [
+            useRisk ? `リスク層:あり(前倒し ${earlyStartRisk})` : 'リスク層:なし',
             foundation === 'off'
               ? FOUNDATION_LABELS[foundation]
               : `${FOUNDATION_LABELS[foundation]}(-${foundationAmount})`,
@@ -306,10 +345,13 @@ function main(): void {
             limit,
             foundation,
             foundationAmount,
+            risk,
           })
         }
       }
     }
+   }
+  }
    }
   }
    }
@@ -329,6 +371,7 @@ function main(): void {
         cell.limit,
         cell.foundation,
         cell.foundationAmount,
+        cell.risk,
       )
       all.push(...games)
       rows.push(aggregate(games))
@@ -363,7 +406,9 @@ function printIndicators(rows: Aggregate[]): void {
     '②専門家競合',
     '②見送り/週',
     '⑤基盤Lv2/G',
-    '⑤恩恵タスク/G',
+    '③前倒し率',
+    'リスク/G',
+    '④炎上/G',
   ]
   const body = rows.map((r) => [
     r.strategy,
@@ -376,7 +421,9 @@ function printIndicators(rows: Aggregate[]): void {
     pct(r.specialistContentionRate),
     num(r.forgonePerWeek, 2),
     num(r.foundationLv2PerGame, 2),
-    num(r.foundationBoostsPerGame, 1),
+    pct(r.earlyStartRate),
+    num(r.riskMarkersPerGame, 1),
+    num(r.outbreaksPerGame, 2),
   ])
   const widths = header.map((h, i) =>
     Math.max(displayWidth(h), ...body.map((row) => displayWidth(row[i]!))),

@@ -31,6 +31,14 @@ export interface GameConfig {
    * 雑に作った土台の上に積むと余計に時間がかかる、を表す。前提が Lv2 になれば消える。
    */
   qualityRiskPrereqPenalty: number
+  /**
+   * 前提成果物が未納品でも着手できるようにするか(v6 提案 §2-3 の検証用)。
+   *
+   * **既定は false = RULES.md §6-2 のまま**(ブロック中には座れない)。
+   * true にすると前提未達でも配置でき、「塞ぐ」代わりに「汚れる」設計を測れる。
+   * クライアント確認待ち(`blockedUntilWeek`)によるブロックは true でも解除されない。
+   */
+  allowEarlyStart: boolean
 
   // ── 見積差異(RULES.md §2-2) ──
   /** リスク別の実工数補正の分布 */
@@ -118,6 +126,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   upgradeCost: 3,
   qualityRiskEffortPenalty: 1,
   qualityRiskPrereqPenalty: 1,
+  allowEarlyStart: false,
 
   riskVariance: {
     low: [0, 0, 1],

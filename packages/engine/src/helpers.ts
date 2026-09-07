@@ -88,6 +88,16 @@ export function isSlotUsable(state: GameState, slotId: string): boolean {
  */
 export function isTaskBlocked(state: GameState, task: BoardTask): boolean {
   if (task.blockedUntilWeek >= state.week && task.blockedUntilWeek > 0) return true
+  // 前倒し着手を許す設定では、前提未達はブロック理由にならない(v6 提案 §2-3)
+  if (state.config.allowEarlyStart) return false
+  return isPrereqBlocked(state, task)
+}
+
+/**
+ * 前提成果物が未納品でブロックされているか(クライアント確認待ちは含まない)。
+ * `allowEarlyStart` が true のときは「着手はできるが前倒しである」の判定に使う。
+ */
+export function isPrereqBlocked(state: GameState, task: BoardTask): boolean {
   if (task.interrupt) return false
   const card = getTaskCard(state.content, task.cardId)
   if (!card) return false

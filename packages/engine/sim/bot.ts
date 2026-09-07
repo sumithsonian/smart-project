@@ -26,6 +26,7 @@ import {
   cubesForSlot,
   cubesForTask,
   isSlotUsable,
+  isPrereqBlocked,
   isTaskBlocked,
   requiredCubes,
   taskSkill,
@@ -49,6 +50,15 @@ import {
   type FoundationApplied,
   type FoundationMode,
 } from './foundation'
+import {
+  applyWeekendRisks,
+  carryRiskToSlots,
+  collectEarlyStarts,
+  emptyTally,
+  snapshotCubes,
+  type RiskOptions,
+  type RiskTally,
+} from './risk'
 
 const PLAYER_IDS = ['p1', 'p2', 'p3', 'p4']
 
@@ -72,6 +82,14 @@ interface Ctx {
   foundationAmount: number
   /** すでにボーナスを配ったタスク(二重適用の防止) */
   foundationApplied: FoundationApplied
+  /** リスクマーカーの設定(null = v6 のリスク層を使わない) */
+  risk: RiskOptions | null
+  /** リスクの発生と炎上の集計 */
+  tally: RiskTally
+  /** 週初の積みキューブ(前倒し着手の検出用) */
+  weekCubes: Map<number, number>
+  /** 週初から盤上にあった割り込み(放置の検出用) */
+  weekInterrupts: Set<number>
 }
 
 /** アクションを試す。通れば state を進め、通らなければ理由を返す */
@@ -384,8 +402,14 @@ function workOptions(ctx: Ctx): WorkOption[] {
   const { state, strategy } = ctx
   const options: WorkOption[] = []
 
+  const earlyStance = strategy.earlyStart ?? 'whenIdle'
   for (const task of state.board) {
     if (isTaskBlocked(state, task)) continue
+    // 前倒し着手(v6 提案 §2-3):座れるが、週末にリスクマーカーが付く。
+    // 「他にやることが無い週だけ使う」を既定にして、常用と使わないの両極も測れるようにする
+    const early = state.config.allowEarlyStart && isPrereqBlocked(state, task)
+    if (early && earlyStance === 'never') continue
+    const earlyPenalty = early && earlyStance === 'whenIdle' ? 50 : 0
     const remaining = Math.max(0, requiredCubes(state, task) - task.cubes)
 
     if (task.interrupt) {
@@ -408,7 +432,7 @@ function workOptions(ctx: Ctx): WorkOption[] {
       options.push({
         key: `task:${task.cardId}`,
         target: { kind: 'task', cardId: task.cardId },
-        priority: urgency,
+        priority: urgency - earlyPenalty,
         remaining,
       })
       continue
@@ -625,9 +649,21 @@ function assignWeek(ctx: Ctx): void {
 
     const option = takeOption(playerId)
     if (option) {
+      const targeted = option.target
+      const wasEarly =
+        targeted.kind === 'task' &&
+        ctx.state.config.allowEarlyStart &&
+        (() => {
+          const t = ctx.state.board.find((b) => b.cardId === targeted.cardId)
+          return !!t && isPrereqBlocked(ctx.state, t)
+        })()
       const code = tryAct(ctx, { type: 'ASSIGN_WORKER', playerId, target: option.target })
       if (code === null) {
         productive++
+        if (targeted.kind === 'task') {
+          ctx.metrics.taskStarts++
+          if (wasEarly) ctx.metrics.earlyStarts++
+        }
       } else {
         if (code === 'TASK_BLOCKED') ctx.metrics.blockedAttempts++
         tryAct(ctx, { type: 'ASSIGN_WORKER', playerId, target: { kind: 'rest' } })
@@ -927,6 +963,14 @@ function emptyMetrics(strategy: string, seed: number): GameMetrics {
     qualityRiskLeft: 0,
     foundationLv2: 0,
     foundationBoosts: 0,
+    riskMarkers: 0,
+    riskFromOverload: 0,
+    riskFromEarlyStart: 0,
+    riskFromOverrun: 0,
+    riskFromInterruptNeglect: 0,
+    outbreaks: 0,
+    earlyStarts: 0,
+    taskStarts: 0,
   }
 }
 
@@ -950,6 +994,7 @@ export function playGame(
   workerLimit: WorkerLimitMode = 'none',
   foundation: FoundationMode = 'off',
   foundationAmount = 1,
+  risk: RiskOptions | null = null,
 ): GameMetrics {
   const strategy = resolveStrategy(base, foundation)
   const metrics = emptyMetrics(strategy.name, seed)
@@ -974,6 +1019,10 @@ export function playGame(
     foundation,
     foundationAmount,
     foundationApplied: new Set(),
+    risk,
+    tally: emptyTally(),
+    weekCubes: new Map(),
+    weekInterrupts: new Set(),
   }
 
   let guard = 0
@@ -1005,6 +1054,10 @@ export function playGame(
       }
       case 'standup': {
         metrics.weeksPlayed++
+        ctx.weekCubes = snapshotCubes(ctx.state)
+        ctx.weekInterrupts = new Set(
+          ctx.state.board.filter((t) => t.interrupt !== null).map((t) => t.placedSeq),
+        )
         considerDecline(ctx)
         assignWeek(ctx)
         for (const player of ctx.state.players.map((p) => p.id)) {
@@ -1021,9 +1074,24 @@ export function playGame(
       }
       case 'weekend': {
         measureEfforts(ctx)
+        const beforeDelivery = ctx.state
         deliverTasks(ctx)
+        // v6 提案 §2-1:納品してもマーカーは消えず、スロットへ引き継がれる
+        if (ctx.risk) carryRiskToSlots(beforeDelivery, ctx.state, ctx.risk, ctx.tally)
         usePolish(ctx)
         considerDecline(ctx)
+        // v6 提案 §2-2:今週のふるまいからリスクマーカーを置き、閾値に達したものを炎上させる。
+        // 盤面がまだ今週のうちに走らせる必要があるので END_WEEKEND の直前に呼ぶ
+        if (ctx.risk) {
+          const early = collectEarlyStarts(ctx.state, ctx.weekCubes)
+          ctx.state = applyWeekendRisks(
+            ctx.state,
+            ctx.risk,
+            ctx.tally,
+            early,
+            ctx.weekInterrupts,
+          )
+        }
         const before = ctx.state.week
         if (tryAct(ctx, { type: 'END_WEEKEND', playerId: ctx.state.pmPlayerId }) !== null) {
           guard = 400
@@ -1063,6 +1131,18 @@ export function playGame(
   metrics.phasesPlayed = Math.max(metrics.phasesPlayed, final.phase)
   metrics.qualityRiskLeft = final.slots.filter((s) => s.qualityRisk).length
   metrics.foundationLv2 = foundationLv2Count(final, foundation)
+  const t = ctx.tally
+  metrics.riskFromOverload = t.fromOverload
+  metrics.riskFromEarlyStart = t.fromEarlyStart
+  metrics.riskFromOverrun = t.fromOverrun
+  metrics.riskFromInterruptNeglect = t.fromInterruptNeglect
+  metrics.riskMarkers =
+    t.fromOverload +
+    t.fromEarlyStart +
+    t.fromOverrun +
+    t.fromInterruptNeglect +
+    t.fromLv1Delivery
+  metrics.outbreaks = t.outbreaks + t.slotOutbreaks
   metrics.trustBonuses = final.log.filter((l) => l.message.includes('信頼ボーナス')).length
   metrics.overflows = final.log.filter((l) => l.message.includes('あふれた')).length
   metrics.interruptsSpawned += metrics.overflows
