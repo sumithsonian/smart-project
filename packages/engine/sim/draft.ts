@@ -7,7 +7,7 @@
  *
  * エンジンの公開 API は変えていない。盤面とデッキを直接組み替えている。
  */
-import type { BoardTask, GameState } from '../src/types'
+import type { BoardTask, GameState, TaskCard } from '../src/types'
 import { getTaskCard } from '../src/helpers'
 
 // ═══════════════════════════════════════════════════════════
@@ -111,12 +111,23 @@ export function revealMissingCards(
 // §4 デッキ汚染 — 負債カードが選択肢を薄め、仕事を増やす
 // ═══════════════════════════════════════════════════════════
 
-/** デッキ汚染の有無 */
+/** 負債カードの行き先 */
 export type DebtMode =
   /** 汚染なし(v5.1 現行) */
   | 'off'
-  /** Lv1 納品・炎上・スコープ緩和が負債カードを生む */
-  | 'on'
+  /**
+   * 負債を**割り込みレーン**に出す。返さないと枠を食い、あふれれば CS を失う。
+   * 測っているのは負債の**経済的な重さ**で、「選択肢が薄まる」体験ではない。
+   */
+  | 'interrupt'
+  /**
+   * 負債を**候補プールに混ぜる**(v6 提案 §4-2 の本来の姿 = デッキ汚染)。
+   * プールの枚数は `draftPool` で頭打ちなので、負債が居座るぶん
+   * **選べる正味のタスクが減る**。クランク! / ドミニオンの呪い札と同じ効き方。
+   */
+  | 'pool'
+  /** 両方 */
+  | 'both'
 
 /** 負債の設定(v6 提案 §7 の GameConfig 追加分) */
 export interface DebtOptions {
@@ -172,17 +183,52 @@ export function spawnDebtCards(
   let next = state
   const count = tally.pending
   tally.pending = 0
+
   for (let i = 0; i < count; i++) {
     tally.spawned++
-    next = spawnInterrupt(next, {
-      kind: 'rework',
-      effort: opts.effort,
-      skill: null,
-      targetSlotId: null,
-      fire: 0,
-    })
+    if (mode === 'interrupt' || mode === 'both') {
+      next = spawnInterrupt(next, {
+        kind: 'rework',
+        effort: opts.effort,
+        skill: null,
+        targetSlotId: null,
+        fire: 0,
+      })
+    }
+    if (mode === 'pool' || mode === 'both') {
+      next = pollutePool(next, opts, tally)
+    }
   }
   return next
+}
+
+/**
+ * 負債カードを候補プールに1枚混ぜる(v6 提案 §4-2)。
+ *
+ * 埋めるスロットを実在しない `debt` にしてあるので、**どの要件の道にもなりません**。
+ * 候補プールは `draftPool` 枚で頭打ちなので、これが1枚居座るたびに
+ * 選べる正味のタスクが1枚減ります。これが「選択肢が薄まる」の正体です。
+ */
+function pollutePool(state: GameState, opts: DebtOptions, tally: DebtTally): GameState {
+  const id = `debt-${tally.spawned}`
+  const card: TaskCard = {
+    id,
+    name: '技術的負債',
+    phase: state.phase,
+    slot: 'debt',
+    skill: 'engineering',
+    estimate: opts.effort,
+    risk: 'medium',
+    maxLevel: 1,
+    fatigue: 1,
+    cost: 0,
+    prerequisiteSlots: [],
+  }
+  return {
+    ...state,
+    content: { ...state.content, tasks: [...state.content.tasks, card] },
+    taskPool: [...state.taskPool, id],
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -39,6 +39,14 @@ export interface GameConfig {
    * クライアント確認待ち(`blockedUntilWeek`)によるブロックは true でも解除されない。
    */
   allowEarlyStart: boolean
+  /**
+   * 実工数を「着手前」に公開するか(v6 提案 §5-1 ワイヤーフレーム Lv2 の検証用)。
+   *
+   * **既定は false = RULES.md §2-2 のまま**(初めてキューブが積まれた週の週末に公開)。
+   * true にすると、計画ボードに置いてある未着手のタスクも週末に実工数が確定するので、
+   * **見積の外れを知ってから配置を決められる**(= 不確実性が減る)。
+   */
+  earlyEffortReveal: boolean
 
   // ── 見積差異(RULES.md §2-2) ──
   /** リスク別の実工数補正の分布 */
@@ -127,6 +135,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   qualityRiskEffortPenalty: 1,
   qualityRiskPrereqPenalty: 1,
   allowEarlyStart: false,
+  earlyEffortReveal: false,
 
   riskVariance: {
     low: [0, 0, 1],

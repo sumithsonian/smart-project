@@ -152,6 +152,11 @@ export function applyWeekendRisks(
   earlyStarted: Set<number>,
   /** 先週すでに盤上にあった割り込みの placedSeq */
   carriedInterrupts: Set<number>,
+  /**
+   * 前倒し着手にリスクマーカーを付けないか(サイトマップ Lv2 の恩恵。v6 提案 §5-1)。
+   * 工数は減らないが、**着手順の不確実性が消える**ぶん置き場所が安全に増える。
+   */
+  earlyStartExempt = false,
 ): GameState {
   let next = state
 
@@ -174,7 +179,7 @@ export function applyWeekendRisks(
   }
 
   // ── ③ 前倒し着手:前提が未達のまま座られたタスクへ1個 ──
-  if (opts.onEarlyStart > 0) {
+  if (opts.onEarlyStart > 0 && !earlyStartExempt) {
     for (const seq of earlyStarted) {
       next = addRisk(next, seq, opts.onEarlyStart)
       tally.fromEarlyStart += opts.onEarlyStart

@@ -157,8 +157,15 @@ export function processWeekend(state: GameState): GameState {
 function revealActualEfforts(state: GameState): GameState {
   let next = state
   // placedSeq 順に処理して、同じシードなら必ず同じ結果になるようにする
+  // earlyEffortReveal のときは、まだ着手していない計画タスクも対象にする
+  // (見積の外れを知ってから配置を決められる = 不確実性が減る)
   const pending = next.board
-    .filter((t) => !t.interrupt && t.actualEffort === null && t.cubes > 0)
+    .filter(
+      (t) =>
+        !t.interrupt &&
+        t.actualEffort === null &&
+        (t.cubes > 0 || (next.config.earlyEffortReveal && t.plannedWeek !== null)),
+    )
     .sort((a, b) => a.placedSeq - b.placedSeq)
   for (const task of pending) {
     const card = getTaskCard(next.content, task.cardId)

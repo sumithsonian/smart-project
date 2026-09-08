@@ -47,6 +47,7 @@ import {
   applyFoundationBonuses,
   foundationLv2Count,
   foundationSlots,
+  uncertaintyActive,
   type FoundationApplied,
   type FoundationMode,
 } from './foundation'
@@ -1110,6 +1111,18 @@ export function playGame(
     ctx.state = boost.state
     metrics.foundationBoosts += boost.boosted
 
+    // ワイヤーフレーム Lv2:実工数が着手前に分かるようになる(v6 提案 §5-1)。
+    // 工数は減らないが、見積の外れを知ってから配置を決められる
+    if (
+      !ctx.state.config.earlyEffortReveal &&
+      uncertaintyActive(ctx.state, ctx.foundation, 'effortForesight')
+    ) {
+      ctx.state = {
+        ...ctx.state,
+        config: { ...ctx.state.config, earlyEffortReveal: true },
+      }
+    }
+
     if (ctx.state.pendingEvent !== null) {
       resolvePending(ctx)
       trackInterrupts(ctx)
@@ -1121,8 +1134,7 @@ export function playGame(
         // v6 §4-2:前フェーズに溜まった負債が、返済しきれず仕事として戻ってくる
         ctx.state = spawnDebtCards(ctx.state, ctx.debtMode, ctx.debtOpts, ctx.debt)
         // v6 §3-2:候補の一部が伏せ札に回る。要件定義書 Lv2 なら公開枚数が増える(§3-4)
-        const revealBonus =
-          (ctx.state.slots.find((s) => s.slotId === 'requirements')?.level ?? 0) >= 2 ? 2 : 0
+        const revealBonus = uncertaintyActive(ctx.state, ctx.foundation, 'draftReveal') ? 2 : 0
         ctx.state = hideDraftCards(ctx.state, ctx.draft, ctx.hiddenCards, revealBonus)
         negotiateScope(ctx)
         // v6 §3-3:埋める道が無くなったスロットは「抜け漏れ」として割り込みで噴き出す
@@ -1171,6 +1183,8 @@ export function playGame(
             ctx.tally,
             early,
             ctx.weekInterrupts,
+            // サイトマップ Lv2:前倒し着手が汚れなくなる(v6 提案 §5-1)
+            uncertaintyActive(ctx.state, ctx.foundation, 'earlyStartSafe'),
           )
         }
         accrueDebt(ctx)

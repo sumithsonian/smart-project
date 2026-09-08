@@ -273,10 +273,19 @@ function runCell(
   return games
 }
 
+const DEBT_LABELS: Record<DebtMode, string> = {
+  off: 'なし',
+  interrupt: '割り込みに出す',
+  pool: '候補プールを汚染',
+  both: '両方',
+}
+
 const FOUNDATION_LABELS: Record<FoundationMode, string> = {
   off: '基盤ボーナス:なし',
-  on: '基盤ボーナス:提案どおり(スタイルガイド/CMS)',
-  early: '基盤ボーナス:対抗仮説(要件定義書/サイトマップ)',
+  on: '基盤ボーナス:工数減・提案どおり(スタイルガイド/CMS)',
+  early: '基盤ボーナス:工数減(要件定義書/サイトマップ)',
+  uncertainty: '基盤ボーナス:不確実性のみ(工数減なし)',
+  both: '基盤ボーナス:工数減+不確実性',
 }
 
 const LIMIT_LABELS: Record<WorkerLimitMode, string> = {
@@ -358,7 +367,7 @@ function main(): void {
             : null
           const parts = [
             draft === 'hidden' ? 'ドラフト:一部伏せ' : null,
-            debt === 'on' ? `デッキ汚染:あり(Lv1 ${lv1})` : null,
+            debt === 'off' ? null : `負債:${DEBT_LABELS[debt]}(Lv1 ${lv1})`,
             useRisk ? `リスク層:あり(前倒し ${earlyStartRisk})` : 'リスク層:なし',
             foundation === 'off'
               ? FOUNDATION_LABELS[foundation]
