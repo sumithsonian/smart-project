@@ -16,6 +16,7 @@ import {
   isTaskBlocked,
   replay,
   requiredCubes,
+  riskyPrerequisites,
   taskSkill,
   unmetPrerequisites,
   weekLoad,
@@ -252,6 +253,13 @@ export function useGame() {
   /** ブロック中か(前提未達 or クライアント確認待ち。RULES.md §6-2) */
   function isBlocked(task: BoardTask): boolean {
     return isTaskBlocked(state.value, task)
+  }
+  /**
+   * 品質リスクのある前提成果物の表示名(RULES.md §2-4-6)。
+   * これがあると、このタスクは前提1つにつき必要人日が増えている。
+   */
+  function riskyPrereqNames(task: BoardTask): string[] {
+    return riskyPrerequisites(state.value, task).map(slotName)
   }
   /** 満たされていない前提成果物の表示名一覧 */
   function blockReason(task: BoardTask): string | null {
@@ -572,6 +580,7 @@ export function useGame() {
     requiredSkillOf,
     isBlocked,
     blockReason,
+    riskyPrereqNames,
     deliveryPreview,
     taskAssignees,
     plannedTasks,

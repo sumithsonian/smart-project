@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
 import { isRuleViolation } from '../src/types'
-import { isTaskBlocked, unmetPrerequisites } from '../src/helpers'
+import { isPrereqBlocked, isTaskBlocked, unmetPrerequisites } from '../src/helpers'
 import {
   addBoardTask,
   allReady,
@@ -132,5 +132,45 @@ describe('遅延の伝播(RULES.md §6-3)', () => {
     expect(s.step).toBe('weekend')
     s = must(applyAction(s, { type: 'MOVE_TASK', playerId: 'a', cardId: 't-sitemap-light', week: 3 }))
     expect(s.board.find((t) => t.cardId === 't-sitemap-light')!.plannedWeek).toBe(3)
+  })
+})
+
+describe('前倒し着手の解禁(allowEarlyStart。v6 提案 §2-3 の検証用)', () => {
+  it('既定は false で、RULES.md §6-2 のまま前提未達には座れない', () => {
+    const s = newGame(5)
+    expect(s.config.allowEarlyStart).toBe(false)
+  })
+
+  it('true にすると前提が未納品でも着手できる', () => {
+    let s = toStandup(newGame(5, { config: { allowEarlyStart: true } }))
+    s = addBoardTask(s, makeBoardTask('t-sitemap-light', { plannedWeek: 1 }))
+    const task = s.board.find((t) => t.cardId === 't-sitemap-light')!
+    expect(isPrereqBlocked(s, task)).toBe(true)
+    expect(isTaskBlocked(s, task)).toBe(false)
+
+    const r = applyAction(s, {
+      type: 'ASSIGN_WORKER',
+      playerId: 'a',
+      target: { kind: 'task', cardId: 't-sitemap-light' },
+    })
+    expect(isRuleViolation(r)).toBe(false)
+  })
+
+  it('true でもクライアント確認待ちのブロックは解除されない(RULES.md §7-3)', () => {
+    let s = toStandup(newGame(5, { config: { allowEarlyStart: true } }))
+    s = withSlot(s, 'requirements', { level: 1 })
+    s = addBoardTask(
+      s,
+      makeBoardTask('t-sitemap-light', { plannedWeek: 1, blockedUntilWeek: s.week }),
+    )
+    const task = s.board.find((t) => t.cardId === 't-sitemap-light')!
+    expect(isTaskBlocked(s, task)).toBe(true)
+
+    const r = applyAction(s, {
+      type: 'ASSIGN_WORKER',
+      playerId: 'a',
+      target: { kind: 'task', cardId: 't-sitemap-light' },
+    })
+    expect(isRuleViolation(r) && r.code).toBe('TASK_BLOCKED')
   })
 })

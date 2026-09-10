@@ -24,8 +24,29 @@ export interface GameConfig {
   qualityOvershoot: number
   /** 納品後の Lv1→Lv2 改修に必要なキューブ数 */
   upgradeCost: number
-  /** 品質リスクのあるスロットへの手戻り対応の工数増(RULES.md §2-4) */
+  /** 品質リスクのあるスロットへの手戻り対応の工数増(RULES.md §2-4-5) */
   qualityRiskEffortPenalty: number
+  /**
+   * 前提成果物に品質リスクがあるときの、後続タスクの必要工数の増加(RULES.md §2-4-6)。
+   * 雑に作った土台の上に積むと余計に時間がかかる、を表す。前提が Lv2 になれば消える。
+   */
+  qualityRiskPrereqPenalty: number
+  /**
+   * 前提成果物が未納品でも着手できるようにするか(v6 提案 §2-3 の検証用)。
+   *
+   * **既定は false = RULES.md §6-2 のまま**(ブロック中には座れない)。
+   * true にすると前提未達でも配置でき、「塞ぐ」代わりに「汚れる」設計を測れる。
+   * クライアント確認待ち(`blockedUntilWeek`)によるブロックは true でも解除されない。
+   */
+  allowEarlyStart: boolean
+  /**
+   * 実工数を「着手前」に公開するか(v6 提案 §5-1 ワイヤーフレーム Lv2 の検証用)。
+   *
+   * **既定は false = RULES.md §2-2 のまま**(初めてキューブが積まれた週の週末に公開)。
+   * true にすると、計画ボードに置いてある未着手のタスクも週末に実工数が確定するので、
+   * **見積の外れを知ってから配置を決められる**(= 不確実性が減る)。
+   */
+  earlyEffortReveal: boolean
 
   // ── 見積差異(RULES.md §2-2) ──
   /** リスク別の実工数補正の分布 */
@@ -112,6 +133,9 @@ export const DEFAULT_CONFIG: GameConfig = {
   qualityOvershoot: 2,
   upgradeCost: 3,
   qualityRiskEffortPenalty: 1,
+  qualityRiskPrereqPenalty: 1,
+  allowEarlyStart: false,
+  earlyEffortReveal: false,
 
   riskVariance: {
     low: [0, 0, 1],

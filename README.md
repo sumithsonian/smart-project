@@ -38,7 +38,9 @@ pnpm lint       # ESLint
 |---|---|
 | `packages/engine` | 純TSルールエンジン(UI/DB非依存・副作用なし・シード付き乱数) |
 | `apps/web` | Nuxt 4 ホットシートUI(1画面で全員を操作するデバッグUI) |
+| `packages/engine/sim` | バランスシミュレータ(エンジンをそのまま駆動するボット + モンテカルロ) |
 | `docs/RULES.md` | **ルールの単一の正(v5)** |
+| `docs/rules-v6-proposal.md` | **討議中の v6 再設計案**(リスクマーカー統合・前倒し着手・フェーズドラフト・デッキ汚染・基盤ボーナス)|
 | `docs/rules-v*-*.md` | 履歴(過去の討議ドラフト。現行ルールではありません) |
 
 ## 遊び方(ホットシートUI)
@@ -62,10 +64,39 @@ pnpm lint       # ESLint
 - 右下の `1:1` で等倍表示、`⤢` で全体表示に切り替わります
 - 左下の「📜 ログ」から進行ログ・Undo・リセットが使えます
 
+## バランスシミュレーション
+
+エンジンをそのまま駆動するボットで、モンテカルロを回せます(シード付き乱数なので完全に再現します)。
+
+```bash
+pnpm --filter @smart-project/engine sim                          # 既定設定 × 全戦略
+pnpm --filter @smart-project/engine sim -- --games 500
+pnpm --filter @smart-project/engine sim -- --sweep mustMissCs=1,2,3
+pnpm --filter @smart-project/engine sim -- --inflow experience,triage,pressure
+pnpm --filter @smart-project/engine sim -- --demand base,high
+pnpm --filter @smart-project/engine sim -- --deps serial,wide
+pnpm --filter @smart-project/engine sim -- --foundation off,on,early --foundation-amount 1,2,3
+pnpm --filter @smart-project/engine sim -- --risk off,on           # v6 提案のリスクマーカー層
+pnpm --filter @smart-project/engine sim -- --draft open,hidden
+pnpm --filter @smart-project/engine sim -- --debt off,interrupt,pool,both
+pnpm --filter @smart-project/engine sim -- --foundation off,early,uncertainty,both
+```
+
+結果と所見は **[RULES.md §13](docs/RULES.md)** にまとめています。要点:
+
+- ✅ v4.1 の課題だった「成り行き戦略が最強」は解消(#8 の Better・信頼ボーナスが効いている)
+- ✅ **計画ボードは機能している**(再計画 9.8回/ゲーム、過負荷を承知で選ぶ週が 37%)
+- ✅ **専門家の取り合いは起きている**(系統単位の競合週 33.6%。#7 の狙いどおり)
+- ❌ **チーム全体ではジレンマが起きていない**(需要/供給 0.62 = 全部できてしまう)
+- ❌ **謝絶がまったく使われない**。チームに手空きがあり、割り込みを無料で吸収できるため
+- ⚠ **速く Lv1 で出す戦略が依然最強**。v5.1 で §2-4-6(粗い土台は後続を重くする)を入れて
+  品質投資は報われる方向になったが、依存チェーンが直列でテンポの価値が大きすぎて順位は変わらず
+
+毎回の実行で **①計画の質 / ②実施ジレンマ** の指標が出ます(RULES.md §13-6)。
+
 ## 既知の制限(ステージ1のスコープ外)
 
 - ネットワーク対戦・Supabase 連携なし(ステージ2)
-- カードはプレイテスト用の仮データ。**v5 のバランスは未検証**
-  (v4.1 のモンテカルロ結果は約束モデル前提のため、v5 では再シミュレーションが必要。RULES.md §13)
+- カードはプレイテスト用の仮データ。**v5 のバランスは調整前**(測定は完了。RULES.md §13)
 - `redactFor` はエンジン API として実装済みだが、ホットシートUIでは未使用(全公開)
 - 個人目標・マイルストーン、プロダクトボードの完成ボーナスは未実装(RULES.md §13)
