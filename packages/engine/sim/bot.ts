@@ -48,6 +48,7 @@ import {
   foundationLv2Count,
   foundationSlots,
   uncertaintyActive,
+  uncertaintyDepth,
   type FoundationApplied,
   type FoundationMode,
 } from './foundation'
@@ -62,13 +63,18 @@ import {
 } from './risk'
 import {
   DEFAULT_DEBT,
+  DEFAULT_DISCOVERY,
+  discoveryCountForPhase,
+  drainDiscoveryBacklog,
   emptyDebtTally,
+  spawnDiscovery,
   hideDraftCards,
   revealMissingCards,
   spawnDebtCards,
   type DebtMode,
   type DebtOptions,
   type DebtTally,
+  type DiscoveryOptions,
   type DraftMode,
 } from './draft'
 
@@ -104,8 +110,14 @@ interface Ctx {
   weekInterrupts: Set<number>
   /** ドラフトの見え方(v6 提案 §3) */
   draft: DraftMode
-  /** 伏せ札に回っているタスクカード */
+  /** 伏せ札に回っているタスクカード(hidden モード) */
   hiddenCards: Set<string>
+  /** 抜け漏れの設定(discovery モード) */
+  discoveryOpts: DiscoveryOptions
+  /** 今フェーズに残っている抜け漏れの件数(週をまたいで噴き出す) */
+  discoveryLeft: number
+  /** 小数の端数の持ち越し(フェーズをまたぐ) */
+  discoveryBacklog: number
   /** デッキ汚染(v6 提案 §4) */
   debtMode: DebtMode
   debtOpts: DebtOptions
@@ -1061,6 +1073,7 @@ export function playGame(
   draft: DraftMode = 'open',
   debtMode: DebtMode = 'off',
   debtOpts: DebtOptions = DEFAULT_DEBT,
+  discoveryOpts: DiscoveryOptions = DEFAULT_DISCOVERY,
 ): GameMetrics {
   const strategy = resolveStrategy(base, foundation)
   const metrics = emptyMetrics(strategy.name, seed)
@@ -1091,6 +1104,9 @@ export function playGame(
     weekInterrupts: new Set(),
     draft,
     hiddenCards: new Set(),
+    discoveryOpts,
+    discoveryLeft: 0,
+    discoveryBacklog: 0,
     debtMode,
     debtOpts,
     debt: emptyDebtTally(),
@@ -1136,6 +1152,17 @@ export function playGame(
         // v6 §3-2:候補の一部が伏せ札に回る。要件定義書 Lv2 なら公開枚数が増える(§3-4)
         const revealBonus = uncertaintyActive(ctx.state, ctx.foundation, 'draftReveal') ? 2 : 0
         ctx.state = hideDraftCards(ctx.state, ctx.draft, ctx.hiddenCards, revealBonus)
+        // v6 §3-3(作り直し版):今フェーズに噴き出す抜け漏れの件数を決める。
+        // 要件定義書 Lv2 への投資があれば減るが、ゼロにはならない
+        if (ctx.draft === 'discovery') {
+          ctx.discoveryBacklog += discoveryCountForPhase(
+            ctx.discoveryOpts,
+            uncertaintyDepth(ctx.state, ctx.foundation),
+          )
+          const drained = drainDiscoveryBacklog(ctx.discoveryBacklog)
+          ctx.discoveryLeft = drained.spawn
+          ctx.discoveryBacklog = drained.rest
+        }
         negotiateScope(ctx)
         // v6 §3-3:埋める道が無くなったスロットは「抜け漏れ」として割り込みで噴き出す
         ctx.state = revealMissingCards(ctx.state, ctx.hiddenCards, 1, ctx.debt)
@@ -1147,6 +1174,10 @@ export function playGame(
       }
       case 'standup': {
         metrics.weeksPlayed++
+        if (ctx.draft === 'discovery' && ctx.discoveryLeft > 0) {
+          ctx.discoveryLeft--
+          ctx.state = spawnDiscovery(ctx.state, ctx.discoveryOpts, ctx.debt)
+        }
         ctx.weekCubes = snapshotCubes(ctx.state)
         ctx.weekInterrupts = new Set(
           ctx.state.board.filter((t) => t.interrupt !== null).map((t) => t.placedSeq),

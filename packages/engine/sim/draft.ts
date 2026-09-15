@@ -18,8 +18,81 @@ import { getTaskCard } from '../src/helpers'
 export type DraftMode =
   /** 全部見える(v5.1 現行。候補プールは常時 draftPool 枚) */
   | 'open'
-  /** 一部が伏せ札に回る。伏せられた必須カードは実行フェーズで「抜け漏れ」として発覚する */
+  /**
+   * 候補の一部が伏せ札に回り、**埋める道が1本も無くなったスロット**が抜け漏れになる。
+   * §10-6 ③ のとおり判定が二値で、土台を先に固める戦略は構造的に一度も踏まない
+   * (foundationFirst 0.00件/G vs triage 1.34件/G)。**比較用に残してある**
+   */
   | 'hidden'
+  /**
+   * **作り直した版(§10-8)。** 抜け漏れを「盤面の構造」ではなく「**率**」にする。
+   *
+   * 実務の抜け漏れは「その仕事のカードが山に無かった」ではなく、
+   * 「**洗い出しの精度が足りず、やるべき仕事に気づいていなかった**」。
+   * 熟練 PM はさらさら出てきて、新人 PM は抜ける — この差は**枚数の差**であって
+   * 全か無かではない。
+   *
+   * 1フェーズあたり基礎 `basePerPhase` 件の抜け漏れが、週をまたいで噴き出す。
+   * 件数は **Lv2 にした基盤成果物の枚数 × `reduction`** だけ減る。
+   * 「要件定義書だけ 0/1」ではなく **投資の度合いに応じた段階**になっているのが
+   * `hidden` との違い(§10-6 ③ の二値問題への対処)。
+   */
+  | 'discovery'
+
+/** 抜け漏れ(discovery モード)の設定 */
+export interface DiscoveryOptions {
+  /**
+   * 1フェーズあたりの抜け漏れの基礎件数。**小数を取れる**。
+   * 0.5 なら2フェーズに1件で、`hidden` の「在るか無いか」より細かく刻める
+   */
+  basePerPhase: number
+  /** Lv2 にした基盤成果物1枚につき減る件数 */
+  reduction: number
+  /** 抜け漏れ1件の必要工数 */
+  effort: number
+}
+
+export const DEFAULT_DISCOVERY: DiscoveryOptions = {
+  basePerPhase: 2,
+  reduction: 1,
+  effort: 2,
+}
+
+/**
+ * そのフェーズに噴き出す抜け漏れの件数を決める(v6 提案 §3-3 / §3-4)。
+ * 「投資していれば減る」だけで、**ゼロにはなりません**。段階的なのが hidden との違いです。
+ */
+export function discoveryCountForPhase(opts: DiscoveryOptions, depth: number): number {
+  return Math.max(0, opts.basePerPhase - depth * opts.reduction)
+}
+
+/**
+ * 小数の件数を、フェーズをまたいで持ち越しながら整数の件数に落とす。
+ * 0.5 件/フェーズなら 0, 1, 0, 1 … と噴き出す(端数は次フェーズへ繰り越す)。
+ */
+export function drainDiscoveryBacklog(backlog: number): { spawn: number; rest: number } {
+  const spawn = Math.floor(backlog + 1e-9)
+  return { spawn, rest: backlog - spawn }
+}
+
+/**
+ * 抜け漏れを1件、割り込みとして盤面に出す(v6 提案 §3-3)。
+ * 「これ、聞いてないんですけど」。リスクマーカー1個付きで出る。
+ */
+export function spawnDiscovery(
+  state: GameState,
+  opts: DiscoveryOptions,
+  tally: { missingRevealed: number },
+): GameState {
+  tally.missingRevealed++
+  return spawnInterrupt(state, {
+    kind: 'rework',
+    effort: opts.effort,
+    skill: null,
+    targetSlotId: null,
+    fire: 1,
+  })
+}
 
 /** 伏せ札に回す枚数の割合(20枚中5枚 = 0.25。v6 提案 §3-2) */
 const HIDDEN_SHARE = 0.25

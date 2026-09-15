@@ -15,7 +15,14 @@ import { STRATEGIES, strategyByName } from './strategies'
 import type { DemandMode, DependencyMode, InflowMode, WorkerLimitMode } from './decks'
 import type { FoundationMode } from './foundation'
 import { DEFAULT_RISK, type RiskOptions } from './risk'
-import { DEFAULT_DEBT, type DebtMode, type DebtOptions, type DraftMode } from './draft'
+import {
+  DEFAULT_DEBT,
+  DEFAULT_DISCOVERY,
+  type DebtMode,
+  type DebtOptions,
+  type DiscoveryOptions,
+  type DraftMode,
+} from './draft'
 import type { Aggregate, GameMetrics, Strategy } from './types'
 
 interface Options {
@@ -35,12 +42,20 @@ interface Options {
   risks: boolean[]
   /** 前倒し着手1回あたりのリスクマーカー数(§7 riskOnEarlyStart) */
   earlyStartRisks: number[]
+  /** 無理な週次計画1系統あたりのリスクマーカー数(§7 riskOnOverload) */
+  overloadRisks: number[]
   /** ドラフトの見え方(§3) */
   drafts: DraftMode[]
   /** デッキ汚染(§4) */
   debts: DebtMode[]
   /** Lv1 納品1件が生む負債カードの枚数(§4-1) */
   debtLv1: number[]
+  /** 1フェーズあたりの抜け漏れの基礎件数(§3-3) */
+  discoveryBase: number[]
+  /** 抜け漏れ1件の必要工数 */
+  discoveryEffort: number[]
+  /** Lv2 にした基盤成果物1枚につき減る抜け漏れの件数 */
+  discoveryReduction: number[]
 }
 
 function parseArgs(argv: string[]): Options {
@@ -58,9 +73,13 @@ function parseArgs(argv: string[]): Options {
     foundationAmounts: [1],
     risks: [false],
     earlyStartRisks: [DEFAULT_RISK.onEarlyStart],
+    overloadRisks: [DEFAULT_RISK.onOverload],
     drafts: ['open'],
     debts: ['off'],
     debtLv1: [DEFAULT_DEBT.onLv1Delivery],
+    discoveryBase: [DEFAULT_DISCOVERY.basePerPhase],
+    discoveryEffort: [DEFAULT_DISCOVERY.effort],
+    discoveryReduction: [DEFAULT_DISCOVERY.reduction],
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -87,12 +106,20 @@ function parseArgs(argv: string[]): Options {
         .map((v) => v === 'on' || v === 'true')
     } else if (arg === '--early-start-risk') {
       options.earlyStartRisks = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--overload-risk') {
+      options.overloadRisks = next().split(',').map(Number).filter(Number.isFinite)
     } else if (arg === '--draft') {
       options.drafts = next().split(',').filter(Boolean) as DraftMode[]
     } else if (arg === '--debt') {
       options.debts = next().split(',').filter(Boolean) as DebtMode[]
     } else if (arg === '--debt-lv1') {
       options.debtLv1 = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--discovery') {
+      options.discoveryBase = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--discovery-effort') {
+      options.discoveryEffort = next().split(',').map(Number).filter(Number.isFinite)
+    } else if (arg === '--discovery-reduction') {
+      options.discoveryReduction = next().split(',').map(Number).filter(Number.isFinite)
     }
     else if (arg === '--strategy') {
       const names = next().split(',')
@@ -249,6 +276,7 @@ function runCell(
   draft: DraftMode,
   debt: DebtMode,
   debtOpts: DebtOptions,
+  discoveryOpts: DiscoveryOptions,
 ): GameMetrics[] {
   const games: GameMetrics[] = []
   for (let i = 0; i < options.games; i++) {
@@ -267,6 +295,7 @@ function runCell(
         draft,
         debt,
         debtOpts,
+        discoveryOpts,
       ),
     )
   }
@@ -333,77 +362,132 @@ function main(): void {
     draft: DraftMode
     debt: DebtMode
     debtOpts: DebtOptions
+    discoveryOpts: DiscoveryOptions
   }> = []
   const sweepValues = options.sweep ? options.sweep.values : [null]
-  for (const draft of options.drafts) {
-   for (const debt of options.debts) {
-    for (const lv1 of options.debtLv1) {
-     if (debt === 'off' && lv1 !== options.debtLv1[0]) continue
-  for (const useRisk of options.risks) {
-   for (const earlyStartRisk of options.earlyStartRisks) {
-    if (!useRisk && earlyStartRisk !== options.earlyStartRisks[0]) continue
-  for (const foundation of options.foundations) {
-   for (const foundationAmount of options.foundationAmounts) {
-  for (const limit of options.limits) {
-   for (const deps of options.deps) {
-    for (const demand of options.demands) {
-      for (const inflow of options.inflows) {
-        for (const value of sweepValues) {
-          let config =
-            value === null || !options.sweep
-              ? undefined
-              : ({ [options.sweep.key]: value } as Partial<GameConfig>)
-          if (useRisk) {
-            // v6 §6:週初の炎上ドローを止め、炎上はリスク層が裁く。前倒し着手を解禁する
-            config = {
-              firePerRound: 0,
-              fireOutbreakThreshold: 99,
-              allowEarlyStart: true,
-              ...(config ?? {}),
-            }
-          }
-          const risk: RiskOptions | null = useRisk
-            ? { ...DEFAULT_RISK, onEarlyStart: earlyStartRisk }
-            : null
-          const parts = [
-            draft === 'hidden' ? 'ドラフト:一部伏せ' : null,
-            debt === 'off' ? null : `負債:${DEBT_LABELS[debt]}(Lv1 ${lv1})`,
-            useRisk ? `リスク層:あり(前倒し ${earlyStartRisk})` : 'リスク層:なし',
-            foundation === 'off'
-              ? FOUNDATION_LABELS[foundation]
-              : `${FOUNDATION_LABELS[foundation]}(-${foundationAmount})`,
-            LIMIT_LABELS[limit],
-            DEPS_LABELS[deps],
-            DEMAND_LABELS[demand],
-            INFLOW_LABELS[inflow],
-          ]
-          if (config && options.sweep) parts.push(`${String(options.sweep.key)} = ${value}`)
-          const label = parts.filter((p): p is string => p !== null).join(' / ')
-          cells.push({
-            label,
-            config,
-            inflow,
-            demand,
-            deps,
-            limit,
-            foundation,
-            foundationAmount,
-            risk,
-            draft,
-            debt,
-            debtOpts: { ...DEFAULT_DEBT, onLv1Delivery: lv1 },
-          })
-        }
+
+  // 各軸の直積を作る。軸が増えても入れ子を深くしないため、畳み込みで組み立てる。
+  // `gate` が false の軸は、その条件では意味を持たないので先頭の値だけを使う
+  // (例:リスク層が無いときに過負荷リスクを振っても同じ結果にしかならない)
+  type Row = Record<string, unknown>
+  interface Axis {
+    key: string
+    values: readonly unknown[]
+    /** その軸を振る意味がある組み合わせか(false なら先頭の値だけを使う) */
+    gate?: (combo: Row) => boolean
+  }
+  const axes: Axis[] = [
+    { key: 'draft', values: options.drafts },
+    {
+      key: 'discoveryBase',
+      values: options.discoveryBase,
+      gate: (c) => c.draft === 'discovery',
+    },
+    {
+      key: 'discoveryEffort',
+      values: options.discoveryEffort,
+      gate: (c) => c.draft === 'discovery',
+    },
+    {
+      key: 'discoveryReduction',
+      values: options.discoveryReduction,
+      gate: (c) => c.draft === 'discovery',
+    },
+    { key: 'debt', values: options.debts },
+    { key: 'debtLv1', values: options.debtLv1, gate: (c) => c.debt !== 'off' },
+    { key: 'useRisk', values: options.risks },
+    { key: 'earlyStartRisk', values: options.earlyStartRisks, gate: (c) => c.useRisk === true },
+    { key: 'overloadRisk', values: options.overloadRisks, gate: (c) => c.useRisk === true },
+    { key: 'foundation', values: options.foundations },
+    { key: 'foundationAmount', values: options.foundationAmounts },
+    { key: 'limit', values: options.limits },
+    { key: 'deps', values: options.deps },
+    { key: 'demand', values: options.demands },
+    { key: 'inflow', values: options.inflows },
+    { key: 'sweepValue', values: sweepValues },
+  ]
+
+  let combos: Row[] = [{}]
+  for (const axis of axes) {
+    const next: Row[] = []
+    for (const combo of combos) {
+      const open = axis.gate === undefined || axis.gate(combo)
+      const values = open ? axis.values : axis.values.slice(0, 1)
+      for (const value of values) next.push({ ...combo, [axis.key]: value })
+    }
+    combos = next
+  }
+
+  for (const combo of combos) {
+    const draft = combo.draft as DraftMode
+    const discoveryBase = combo.discoveryBase as number
+    const discoveryEffort = combo.discoveryEffort as number
+    const discoveryReduction = combo.discoveryReduction as number
+    const debt = combo.debt as DebtMode
+    const lv1 = combo.debtLv1 as number
+    const useRisk = combo.useRisk as boolean
+    const earlyStartRisk = combo.earlyStartRisk as number
+    const overloadRisk = combo.overloadRisk as number
+    const foundation = combo.foundation as FoundationMode
+    const foundationAmount = combo.foundationAmount as number
+    const limit = combo.limit as WorkerLimitMode
+    const deps = combo.deps as DependencyMode
+    const demand = combo.demand as DemandMode
+    const inflow = combo.inflow as InflowMode
+    const value = combo.sweepValue as number | null
+
+    let config =
+      value === null || !options.sweep
+        ? undefined
+        : ({ [options.sweep.key]: value } as Partial<GameConfig>)
+    if (useRisk) {
+      // v6 §6:週初の炎上ドローを止め、炎上はリスク層が裁く。前倒し着手を解禁する
+      config = {
+        firePerRound: 0,
+        fireOutbreakThreshold: 99,
+        allowEarlyStart: true,
+        ...(config ?? {}),
       }
     }
-   }
-  }
-   }
-  }
-   }
-  }
-    }
-   }
+    const risk: RiskOptions | null = useRisk
+      ? { ...DEFAULT_RISK, onEarlyStart: earlyStartRisk, onOverload: overloadRisk }
+      : null
+    const parts = [
+      draft === 'hidden' ? 'ドラフト:一部伏せ' : null,
+      draft === 'discovery'
+        ? `抜け漏れ:${discoveryBase}件/フェーズ・工数${discoveryEffort}・投資減${discoveryReduction}`
+        : null,
+      debt === 'off' ? null : `負債:${DEBT_LABELS[debt]}(Lv1 ${lv1})`,
+      useRisk ? `リスク層:あり(前倒し ${earlyStartRisk}・過負荷 ${overloadRisk})` : 'リスク層:なし',
+      foundation === 'off'
+        ? FOUNDATION_LABELS[foundation]
+        : `${FOUNDATION_LABELS[foundation]}(-${foundationAmount})`,
+      LIMIT_LABELS[limit],
+      DEPS_LABELS[deps],
+      DEMAND_LABELS[demand],
+      INFLOW_LABELS[inflow],
+    ]
+    if (config && options.sweep) parts.push(`${String(options.sweep.key)} = ${value}`)
+    cells.push({
+      label: parts.filter((p): p is string => p !== null).join(' / '),
+      config,
+      inflow,
+      demand,
+      deps,
+      limit,
+      foundation,
+      foundationAmount,
+      risk,
+      draft,
+      debt,
+      debtOpts: { ...DEFAULT_DEBT, onLv1Delivery: lv1 },
+      discoveryOpts: {
+        ...DEFAULT_DISCOVERY,
+        basePerPhase: discoveryBase,
+        effort: discoveryEffort,
+        reduction: discoveryReduction,
+      },
+    })
   }
 
   for (const cell of cells) {
@@ -424,6 +508,7 @@ function main(): void {
         cell.draft,
         cell.debt,
         cell.debtOpts,
+        cell.discoveryOpts,
       )
       all.push(...games)
       rows.push(aggregate(games))

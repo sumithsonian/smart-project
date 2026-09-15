@@ -153,6 +153,17 @@ export function foundationLv2Count(state: GameState, mode: FoundationMode = 'on'
   return state.slots.filter((s) => s.level >= 2 && sources.has(s.slotId)).length
 }
 
+/**
+ * 不確実性ボーナスのうち、いま Lv2 に達している枚数(0〜3)。
+ * 「投資の度合い」を段階として扱いたいときに使う(§3-3 の抜け漏れ件数など)。
+ */
+export function uncertaintyDepth(state: GameState, mode: FoundationMode): number {
+  if (!hasUncertainty(mode)) return 0
+  return Object.values(UNCERTAINTY_BONUS).filter(
+    (slotId) => (state.slots.find((s) => s.slotId === slotId)?.level ?? 0) >= 2,
+  ).length
+}
+
 /** そのモードでボーナス源になるスロットID(戦略が狙う先) */
 export function foundationSlots(mode: FoundationMode): string[] {
   const ids = new Set<string>(Object.keys(effortTableOf(mode) ?? {}))
