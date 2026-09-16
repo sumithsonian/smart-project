@@ -22,6 +22,7 @@ const {
   requiredSkillOf,
   isBlocked,
   blockReason,
+  riskyPrereqNames,
   deliveryPreview,
   boardTask,
   playerColor,
@@ -52,6 +53,8 @@ const revealed = computed(() => (task.value ? isEffortRevealed(task.value) : fal
 const overshootCells = computed(() => Math.max(0, (task.value?.cubes ?? 0) - needed.value))
 const blocked = computed(() => (task.value ? isBlocked(task.value) : false))
 const blockedWhy = computed(() => (task.value ? blockReason(task.value) : null))
+/** 品質リスクのある前提成果物(RULES.md §2-4-6:雑な土台は後続を重くする) */
+const riskyPrereqs = computed(() => (task.value ? riskyPrereqNames(task.value) : []))
 
 const assignZoneKey = 'task:' + props.cardId
 const extinguishZoneKey = 'extinguish:' + props.cardId
@@ -166,6 +169,16 @@ function dropTask() {
 
       <div v-if="!isInterrupt && card && card.prerequisiteSlots.length > 0" class="tc-prereq">
         前提:{{ card.prerequisiteSlots.map(slotName).join('・') }}
+      </div>
+
+      <div
+        v-if="riskyPrereqs.length > 0"
+        class="tc-risky-prereq"
+        :title="`前提が Lv1(品質リスクあり)のため、必要人日が +${riskyPrereqs.length * state.config.qualityRiskPrereqPenalty} されています。前提を Lv2 にすると消えます`"
+      >
+        ⚠ 土台が粗い({{ riskyPrereqs.join('・') }})→ 必要人日 +{{
+          riskyPrereqs.length * state.config.qualityRiskPrereqPenalty
+        }}
       </div>
 
       <!-- 見積 / 実工数(RULES.md §2-2) -->

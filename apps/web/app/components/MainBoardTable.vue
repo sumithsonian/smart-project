@@ -202,6 +202,7 @@ function learnTarget(skill: (typeof skills)[number]) {
             <div>👣 = コマを置く</div>
             <div>□ = 人日キューブ置き場</div>
             <div>⚠ = 品質リスクあり(Lv1)</div>
+            <div>粗い土台は後続の人日+1</div>
             <div>🥈銀=Lv1 ／ 🥇金=Lv2</div>
           </div>
         </div>

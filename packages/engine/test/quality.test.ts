@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { applyAction } from '../src/applyAction'
-import { requiredCubes } from '../src/helpers'
+import { requiredCubes, riskyPrerequisiteCount } from '../src/helpers'
 import type { GameState } from '../src/types'
 import {
   addBoardTask,
@@ -160,6 +160,75 @@ describe('品質リスクの影響', () => {
     s = must(applyAction(s, { type: 'RESOLVE_EVENT', choiceId: 'accept' }))
     expect(s.cs).toBe(before)
     expect(s.log.some((l) => l.message.includes('指摘なし'))).toBe(true)
+  })
+})
+
+describe('雑な土台は後続を重くする(RULES.md §2-4-6)', () => {
+  it('前提成果物に品質リスクがあると、後続タスクの必要工数が増える', () => {
+    let s = toStandup(newGame(51))
+    // t-sitemap-light の前提は requirements。Lv1(品質リスクあり)で納品済みにする
+    s = withSlot(s, 'requirements', { level: 1, qualityRisk: true })
+    s = addBoardTask(s, makeBoardTask('t-sitemap-light', { actualEffort: 2 }))
+    const task = s.board.find((t) => t.cardId === 't-sitemap-light')!
+    expect(riskyPrerequisiteCount(s, task)).toBe(1)
+    expect(requiredCubes(s, task)).toBe(2 + s.config.qualityRiskPrereqPenalty)
+  })
+
+  it('前提を Lv2 で納めていれば増えない', () => {
+    let s = toStandup(newGame(52))
+    s = withSlot(s, 'requirements', { level: 2, qualityRisk: false })
+    s = addBoardTask(s, makeBoardTask('t-sitemap-light', { actualEffort: 2 }))
+    const task = s.board.find((t) => t.cardId === 't-sitemap-light')!
+    expect(riskyPrerequisiteCount(s, task)).toBe(0)
+    expect(requiredCubes(s, task)).toBe(2)
+  })
+
+  it('改修で前提を Lv2 にすると、後続の増加が消える', () => {
+    let s = toStandup(newGame(53))
+    s = withSlot(s, 'requirements', { level: 1, qualityRisk: true })
+    s = addBoardTask(s, makeBoardTask('t-sitemap-light', { actualEffort: 2 }))
+    const before = requiredCubes(s, s.board.find((t) => t.cardId === 't-sitemap-light')!)
+
+    // 全員 direction を上げて1週で改修を完了させる
+    for (const p of s.players) {
+      s = withPlayer(s, p.id, { skills: { direction: 3, design: 1, engineering: 1 } })
+    }
+    s = apply(s, {
+      type: 'ASSIGN_WORKER',
+      playerId: 'a',
+      target: { kind: 'slot', slotId: 'requirements' },
+    })
+    s = allReady(s)
+    expect(s.slots.find((sl) => sl.slotId === 'requirements')!.qualityRisk).toBe(false)
+
+    const after = requiredCubes(s, s.board.find((t) => t.cardId === 't-sitemap-light')!)
+    expect(after).toBe(before - s.config.qualityRiskPrereqPenalty)
+  })
+
+  it('前提を持たないタスクは影響を受けない', () => {
+    let s = toStandup(newGame(54))
+    s = withSlot(s, 'requirements', { level: 1, qualityRisk: true })
+    // t-req-light は前提なし
+    s = addBoardTask(s, makeBoardTask('t-req-light', { actualEffort: 2 }))
+    const task = s.board.find((t) => t.cardId === 't-req-light')!
+    expect(riskyPrerequisiteCount(s, task)).toBe(0)
+    expect(requiredCubes(s, task)).toBe(2)
+  })
+
+  it('割り込みカードは前提を持たないため影響を受けない', () => {
+    let s = toStandup(newGame(55))
+    s = withSlot(s, 'requirements', { level: 1, qualityRisk: true })
+    s = addBoardTask(
+      s,
+      makeBoardTask('interrupt-1', {
+        interrupt: 'bug',
+        interruptEffort: 2,
+        plannedWeek: null,
+      }),
+    )
+    const task = s.board.find((t) => t.cardId === 'interrupt-1')!
+    expect(riskyPrerequisiteCount(s, task)).toBe(0)
+    expect(requiredCubes(s, task)).toBe(2)
   })
 })
 

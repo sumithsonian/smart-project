@@ -71,6 +71,7 @@ const configGroups: Array<{ title: string; fields: Array<{ key: keyof GameConfig
       { key: 'qualityOvershoot', label: '納品前 Lv2 積み増し量' },
       { key: 'upgradeCost', label: '納品後の改修コスト' },
       { key: 'qualityRiskEffortPenalty', label: '品質リスクの手戻り工数増' },
+      { key: 'qualityRiskPrereqPenalty', label: '粗い土台による後続の工数増' },
       { key: 'finalMissCs', label: '最終検収:未達成 CS 減' },
       { key: 'finalCompromiseCs', label: '最終検収:Lv 妥協 CS 減' },
     ],

@@ -20,6 +20,8 @@ export {
   taskSkill,
   isTaskBlocked,
   unmetPrerequisites,
+  riskyPrerequisiteCount,
+  riskyPrerequisites,
   isSlotUsable,
   hasReworkCard,
   isRequirementFulfilled,
@@ -33,4 +35,4 @@ export { taskLabel, skillName } from './actions/week'
 export { tierLabel, weekLabel, riskLabel } from './actions/scope'
 export { interruptLabel } from './actions/events'
 
-export const ENGINE_VERSION = '0.5.0'
+export const ENGINE_VERSION = '0.5.1'
