@@ -8,6 +8,24 @@
 > 目的:`RULES.md §13-7` で特定した「計画とジレンマが面白くならない2つの原因」を、
 > 数値調整ではなく**メカニクスの再設計**で解く。
 
+## 次にやること(イシュー)
+
+検証は §10-4〜§10-9 で一通り終わっています。**残タスクは GitHub イシューに登録済みです。**
+
+| # | 内容 | 前提 |
+|---|---|---|
+| [#13](https://github.com/sumithsonian/smart-project/issues/13) | **v6 の採否を決める**(§11 の11項目)| ─ |
+| [#14](https://github.com/sumithsonian/smart-project/issues/14) | **仕事の総量を増やす**(コンテンツ側。基準②③⑤⑧ の根)| なし・独立に着手可 |
+| [#15](https://github.com/sumithsonian/smart-project/issues/15) | §3 の抜け漏れを「選択肢が減る」形に作り直す | #13 |
+| [#16](https://github.com/sumithsonian/smart-project/issues/16) | Lv1 納品の罰を1回ぶんに寄せる(基準④)| #13 |
+| [#17](https://github.com/sumithsonian/smart-project/issues/17) | 採択後に `docs/RULES.md` を v6 として書き換える | #13 |
+| [#18](https://github.com/sumithsonian/smart-project/issues/18) | v6 メカニクスをシム近似から本実装へ | #17 |
+
+**#13 がすべての判断ゲートです。** ただし #14 だけは v6 の採否と独立に着手できます
+(v5.1 のままでも有効な改善で、§10-9 の結びのとおり**次に動かす価値がいちばん高い**のもここです)。
+
+---
+
 ## 凡例
 
 | 記号 | 意味 |
