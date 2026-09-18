@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   allocateV7Workdays,
+  allocateV7Learning,
   assignV7Lead,
   assignV7Support,
   createV7State,
   isRuleViolation,
   leaveV7Lead,
+  investigateV7Incident,
   planV7Task,
   resolveV7Week,
+  resolveV7Incident,
   scheduleV7Handoff,
+  triggerV7Event,
   urgentV7Handoff,
   type V7State,
 } from '../src'
@@ -156,5 +160,81 @@ describe('v7 引き継ぎ: 目先の進捗と翌週の自由度を交換する',
     next = ok(assignV7Lead(next, 'b', 'interview'))
     const blocked = allocateV7Workdays(next, 'b', 'interview', 1)
     expect(isRuleViolation(blocked) && blocked.code).toBe('TASK_BLOCKED')
+  })
+})
+
+describe('v7 複数週炎上', () => {
+  it('原因不明のまま週末を迎えると炎上が増え、究明後は増加が止まる', () => {
+    let next = planned()
+    next = ok(assignV7Lead(next, 'a', 'interview'))
+    next = ok(triggerV7Event(next, {
+      id: 'server', name: 'サーバー障害', source: 'personal', tone: 'bad', fire: 1,
+      investigationRequired: 1, resolutionRequired: 2, spreadTarget: 'dependents',
+    }, { taskId: 'interview', playerId: 'a' }))
+    expect(next.board.find((task) => task.taskId === 'interview')?.fire).toBe(1)
+    next = resolveV7Week(next)
+    expect(next.board.find((task) => task.taskId === 'interview')?.fire).toBe(2)
+
+    const incidentId = next.incidents[0]!.id
+    next = ok(investigateV7Incident(next, incidentId, 'a'))
+    expect(next.incidents[0]?.status).toBe('investigated')
+    next = resolveV7Week(next)
+    expect(next.board.find((task) => task.taskId === 'interview')?.fire).toBe(2)
+  })
+
+  it('究明前に原因対応はできず、解決には複数営業日が必要', () => {
+    let next = planned()
+    next = ok(assignV7Lead(next, 'a', 'interview'))
+    next = ok(triggerV7Event(next, {
+      id: 'change', name: '仕様変更', source: 'project', tone: 'bad', fire: 1,
+      investigationRequired: 1, resolutionRequired: 2, spreadTarget: 'same_skill',
+    }, { taskId: 'interview' }))
+    const incidentId = next.incidents[0]!.id
+    const blocked = resolveV7Incident(next, incidentId, 'a')
+    expect(isRuleViolation(blocked) && blocked.code).toBe('TASK_BLOCKED')
+    next = ok(investigateV7Incident(next, incidentId, 'a'))
+    next = ok(resolveV7Incident(next, incidentId, 'a'))
+    expect(next.incidents[0]?.status).toBe('investigated')
+    next = ok(resolveV7Incident(next, incidentId, 'a'))
+    expect(next.incidents[0]?.status).toBe('resolved')
+  })
+
+  it('プロジェクトイベントは複数タスクへ影響する', () => {
+    let next = planned()
+    next = ok(triggerV7Event(next, {
+      id: 'change-all', name: '全体仕様変更', source: 'project', tone: 'bad', fire: 1,
+      investigationRequired: 1, resolutionRequired: 1, spreadTarget: 'same_skill',
+    }))
+    expect(next.board.every((task) => task.fire === 1)).toBe(true)
+    expect(next.incidents).toHaveLength(2)
+  })
+})
+
+describe('v7 成長と資産・負債', () => {
+  it('学習2日で4日目を予約し、次週から使える', () => {
+    let next = state()
+    next = ok(allocateV7Learning(next, 'a', 2))
+    expect(next.players[0]?.workdayCapacity).toBe(3)
+    expect(next.players[0]?.pendingCapacityGain).toBe(1)
+    next = resolveV7Week(next)
+    expect(next.players[0]?.workdayCapacity).toBe(4)
+  })
+
+  it('フェーズ終了時にLv2は資産、未完了は負債として次フェーズへ残る', () => {
+    let next = state()
+    next.taskDefinitions = next.taskDefinitions.map((task) =>
+      task.id === 'interview' ? { ...task, quality: 2, effort: 1 } : task,
+    )
+    next = ok(planV7Task(next, 'interview'))
+    next = ok(planV7Task(next, 'wireframe'))
+    next = ok(assignV7Lead(next, 'a', 'interview'))
+    next = ok(allocateV7Workdays(next, 'a', 'interview', 1))
+    next = resolveV7Week(next)
+    next = resolveV7Week(next)
+    next = resolveV7Week(next)
+    expect(next.phase).toBe(2)
+    expect(next.availableTiles.some((tile) => tile.kind === 'asset')).toBe(true)
+    expect(next.availableTiles.some((tile) => tile.kind === 'debt')).toBe(true)
+    expect(next.availableTiles.every((tile) => tile.source.length > 0)).toBe(true)
   })
 })
