@@ -1,4 +1,4 @@
-import { computed, shallowRef } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import {
   allocateV7Learning,
   allocateV7Workdays,
@@ -55,6 +55,8 @@ function initial(): V7State {
 
 const state = shallowRef(initial())
 const notice = shallowRef('タスク候補から各成果物の作り方を選んでください。')
+const personalEventsDrawn = ref<string[]>([])
+const projectEventDrawnPhases = ref<number[]>([])
 let eventIndex = 0
 
 export function useV7Game() {
@@ -86,20 +88,65 @@ export function useV7Game() {
   function resolveIncident(incidentId: string, playerId: string) { commit(resolveV7Incident(state.value, incidentId, playerId)) }
   function extinguish(taskId: string, playerId: string) { commit(extinguishV7Fire(state.value, taskId, playerId)) }
   function drawEvent(source: 'personal' | 'project', playerId?: string) {
+    if (source === 'personal' && playerId && personalEventsDrawn.value.includes(playerId)) {
+      notice.value = '⚠ このメンバーは今週すでに個人イベントを引いています。'
+      return
+    }
+    if (source === 'project' && projectEventDrawnPhases.value.includes(state.value.phase)) {
+      notice.value = '⚠ このフェーズのプロジェクトイベントは解決済みです。'
+      return
+    }
     const pool = events.filter((event) => event.source === source)
     const event = pool[eventIndex++ % pool.length]!
     const target = state.value.board.find((task) => task.status !== 'completed')
-    commit(triggerV7Event(state.value, event, { taskId: target?.taskId, playerId }))
+    if (!commit(triggerV7Event(state.value, event, { taskId: target?.taskId, playerId }))) return
+    if (source === 'personal' && playerId) personalEventsDrawn.value = [...personalEventsDrawn.value, playerId]
+    if (source === 'project') projectEventDrawnPhases.value = [...projectEventDrawnPhases.value, state.value.phase]
   }
   function nextWeek() {
+    if (!canEndWeek.value) {
+      notice.value = `⚠ 週末へ進む前に「${guide.value.title}」を完了してください。`
+      return
+    }
     state.value = resolveV7Week(state.value)
+    personalEventsDrawn.value = []
     notice.value = state.value.phase > 2 ? '2フェーズの試作が終了しました。ログと指標を確認してください。' : '週末処理を行いました。'
   }
-  function reset() { state.value = initial(); notice.value = 'ゲームをリセットしました。'; eventIndex = 0 }
+  function reset() {
+    state.value = initial()
+    notice.value = 'タスク候補から各成果物の作り方を選んでください。'
+    personalEventsDrawn.value = []
+    projectEventDrawnPhases.value = []
+    eventIndex = 0
+  }
+  const unplannedSlots = computed(() =>
+    state.value.slots.filter((slot) => !state.value.board.some((task) => task.slotId === slot.id)),
+  )
+  const tasksWithoutLead = computed(() =>
+    state.value.board.filter((task) => task.status !== 'completed' && !task.leadPlayerId),
+  )
+  const pendingPersonalPlayers = computed(() =>
+    state.value.players.filter((player) => !personalEventsDrawn.value.includes(player.id)),
+  )
+  const projectEventDue = computed(
+    () => state.value.week === 1 && !projectEventDrawnPhases.value.includes(state.value.phase),
+  )
+  const guide = computed(() => {
+    if (state.value.phase > 2) return { step: 6, title: 'プロジェクト完了', detail: '指標を確認し、もう一度遊ぶ場合はリセットします。' }
+    if (unplannedSlots.value.length > 0) return { step: 1, title: '成果物の作り方を選ぶ', detail: `未計画の成果物が${unplannedSlots.value.length}件あります。短いLv1か、将来に資産を残すLv2を選びます。` }
+    if (tasksWithoutLead.value.length > 0) return { step: 2, title: '主担当を決める', detail: `主担当未定のタスクが${tasksWithoutLead.value.length}件あります。左でメンバーを選び、タスクへ配置します。` }
+    if (projectEventDue.value) return { step: 3, title: 'プロジェクトイベントを引く', detail: 'フェーズ開始時の大きな外的変化を確認します。' }
+    if (pendingPersonalPlayers.value.length > 0) return { step: 4, title: '個人イベントを引く', detail: `残り${pendingPersonalPlayers.value.length}人です。各メンバーを選んで1枚ずつ引きます。` }
+    return { step: 5, title: '営業日を配分する', detail: '進捗・炎上対応・学習へ営業日を置き、判断が終わったら週末処理へ進みます。' }
+  })
+  const canEndWeek = computed(
+    () => unplannedSlots.value.length === 0 && tasksWithoutLead.value.length === 0 && !projectEventDue.value && pendingPersonalPlayers.value.length === 0,
+  )
   return {
     state, notice, tasks, events, taskOf, usedDays, candidatesFor, boardTask,
     remainingDays: (playerId: string) => state.value.players.find((p) => p.id === playerId)!.workdayCapacity - usedDays(playerId),
     gameFinished: computed(() => state.value.phase > 2),
+    personalEventsDrawn, projectEventDue, pendingPersonalPlayers, guide, canEndWeek,
     plan, lead, support, work, learn, handoff, urgent, investigate, resolveIncident, extinguish, drawEvent, nextWeek, reset,
   }
 }
