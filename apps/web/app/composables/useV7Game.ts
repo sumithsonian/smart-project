@@ -1,6 +1,7 @@
 import { computed, ref, shallowRef } from 'vue'
 import {
   allocateV7Learning,
+  allocateV7Rest,
   allocateV7Workdays,
   assignV7Lead,
   assignV7Support,
@@ -9,6 +10,7 @@ import {
   investigateV7Incident,
   isRuleViolation,
   planV7Task,
+  unplanV7Task,
   resolveV7Incident,
   resolveV7Week,
   scheduleV7Handoff,
@@ -21,12 +23,18 @@ import {
 } from '@smart-project/engine'
 
 const tasks: V7TaskDefinition[] = [
-  { id: 'interview', name: 'ユーザーインタビュー', slotId: 'requirements', skill: 'direction', effort: 4, prerequisiteSlotIds: [], quality: 2 },
-  { id: 'survey', name: '短期アンケート', slotId: 'requirements', skill: 'direction', effort: 3, prerequisiteSlotIds: [], quality: 1 },
-  { id: 'prototype', name: '検証プロトタイプ', slotId: 'design', skill: 'design', effort: 5, prerequisiteSlotIds: ['requirements'], quality: 2 },
-  { id: 'quick-design', name: 'クイックデザイン', slotId: 'design', skill: 'design', effort: 3, prerequisiteSlotIds: ['requirements'], quality: 1 },
-  { id: 'components', name: '共通コンポーネント', slotId: 'build', skill: 'engineering', effort: 5, prerequisiteSlotIds: ['design'], quality: 2 },
-  { id: 'direct-build', name: '直接実装', slotId: 'build', skill: 'engineering', effort: 3, prerequisiteSlotIds: ['design'], quality: 1 },
+  { id: 'interview', name: 'ユーザーインタビュー', slotId: 'requirements', skill: 'direction', requiredSkillLevel: 2, effort: 4, prerequisiteSlotIds: [], quality: 2, cost: 2, fatigue: 1 },
+  { id: 'analytics', name: 'アクセス解析', slotId: 'requirements', skill: 'direction', requiredSkillLevel: 1, effort: 3, prerequisiteSlotIds: [], quality: 1, cost: 1, fatigue: 1 },
+  { id: 'stakeholder', name: '関係者ヒアリング', slotId: 'requirements', skill: 'direction', requiredSkillLevel: 2, effort: 3, prerequisiteSlotIds: [], quality: 2, cost: 1, fatigue: 2 },
+  { id: 'inventory', name: 'コンテンツ棚卸し', slotId: 'requirements', skill: 'direction', requiredSkillLevel: 1, effort: 2, prerequisiteSlotIds: [], quality: 1, cost: 0, fatigue: 1 },
+  { id: 'wireframe', name: 'ワイヤーフレーム', slotId: 'design', skill: 'design', requiredSkillLevel: 1, effort: 4, prerequisiteSlotIds: ['requirements'], quality: 1, cost: 1, fatigue: 1 },
+  { id: 'prototype', name: '検証プロトタイプ', slotId: 'design', skill: 'design', requiredSkillLevel: 2, effort: 5, prerequisiteSlotIds: ['requirements'], quality: 2, cost: 3, fatigue: 2 },
+  { id: 'design-system', name: 'デザインシステム', slotId: 'design', skill: 'design', requiredSkillLevel: 2, effort: 5, prerequisiteSlotIds: [], quality: 2, cost: 2, fatigue: 2 },
+  { id: 'content-model', name: 'コンテンツモデル', slotId: 'design', skill: 'design', requiredSkillLevel: 1, effort: 3, prerequisiteSlotIds: ['requirements'], quality: 2, cost: 1, fatigue: 1 },
+  { id: 'tech-spike', name: '技術検証', slotId: 'build', skill: 'engineering', requiredSkillLevel: 2, effort: 3, prerequisiteSlotIds: [], quality: 2, cost: 1, fatigue: 1 },
+  { id: 'components', name: '共通コンポーネント', slotId: 'build', skill: 'engineering', requiredSkillLevel: 2, effort: 5, prerequisiteSlotIds: ['design'], quality: 2, cost: 3, fatigue: 2 },
+  { id: 'direct-build', name: '直接実装', slotId: 'build', skill: 'engineering', requiredSkillLevel: 1, effort: 4, prerequisiteSlotIds: ['design'], quality: 1, cost: 1, fatigue: 2 },
+  { id: 'cms-modeling', name: 'CMSモデリング', slotId: 'build', skill: 'engineering', requiredSkillLevel: 1, effort: 3, prerequisiteSlotIds: ['requirements'], quality: 2, cost: 2, fatigue: 1 },
 ]
 
 const events: V7EventDefinition[] = [
@@ -74,10 +82,12 @@ export function useV7Game() {
   const candidatesFor = (slotId: string) => tasks.filter((task) => task.slotId === slotId)
   const boardTask = (id: string) => state.value.board.find((task) => task.taskId === id)
   function plan(taskId: string) { commit(planV7Task(state.value, taskId)) }
+  function unplan(taskId: string) { commit(unplanV7Task(state.value, taskId)) }
   function lead(playerId: string, taskId: string) { commit(assignV7Lead(state.value, playerId, taskId)) }
   function support(playerId: string, taskId: string) { commit(assignV7Support(state.value, playerId, taskId)) }
-  function work(playerId: string, taskId: string) { commit(allocateV7Workdays(state.value, playerId, taskId, 1)) }
+  function work(playerId: string, taskId: string, days = 1) { commit(allocateV7Workdays(state.value, playerId, taskId, days)) }
   function learn(playerId: string) { commit(allocateV7Learning(state.value, playerId, 1)) }
+  function rest(playerId: string) { commit(allocateV7Rest(state.value, playerId)) }
   function urgent(playerId: string, taskId: string) { commit(urgentV7Handoff(state.value, { taskId, role: 'lead', toPlayerId: playerId })) }
   function handoff(playerId: string, taskId: string) {
     const fromPlayerId = boardTask(taskId)?.leadPlayerId
@@ -119,9 +129,8 @@ export function useV7Game() {
     projectEventDrawnPhases.value = []
     eventIndex = 0
   }
-  const unplannedSlots = computed(() =>
-    state.value.slots.filter((slot) => !state.value.board.some((task) => task.slotId === slot.id)),
-  )
+  const marketTasks = computed(() => tasks.filter((task) => !state.value.board.some((board) => board.taskId === task.id)))
+  const planningReady = computed(() => state.value.board.filter((task) => task.status !== 'completed').length >= state.value.config.activeTaskLimit)
   const tasksWithoutLead = computed(() =>
     state.value.board.filter((task) => task.status !== 'completed' && !task.leadPlayerId),
   )
@@ -133,20 +142,20 @@ export function useV7Game() {
   )
   const guide = computed(() => {
     if (state.value.phase > 2) return { step: 6, title: 'プロジェクト完了', detail: '指標を確認し、もう一度遊ぶ場合はリセットします。' }
-    if (unplannedSlots.value.length > 0) return { step: 1, title: '成果物の作り方を選ぶ', detail: `未計画の成果物が${unplannedSlots.value.length}件あります。短いLv1か、将来に資産を残すLv2を選びます。` }
+    if (!planningReady.value) return { step: 1, title: '今週のタスクを計画する', detail: `市場から${state.value.config.activeTaskLimit}枚まで採用します。すぐ着手できる仕事と将来を解放する仕事を組み合わせます。` }
     if (tasksWithoutLead.value.length > 0) return { step: 2, title: '主担当を決める', detail: `主担当未定のタスクが${tasksWithoutLead.value.length}件あります。左でメンバーを選び、タスクへ配置します。` }
     if (projectEventDue.value) return { step: 3, title: 'プロジェクトイベントを引く', detail: 'フェーズ開始時の大きな外的変化を確認します。' }
     if (pendingPersonalPlayers.value.length > 0) return { step: 4, title: '個人イベントを引く', detail: `残り${pendingPersonalPlayers.value.length}人です。各メンバーを選んで1枚ずつ引きます。` }
     return { step: 5, title: '営業日を配分する', detail: '進捗・炎上対応・学習へ営業日を置き、判断が終わったら週末処理へ進みます。' }
   })
   const canEndWeek = computed(
-    () => unplannedSlots.value.length === 0 && tasksWithoutLead.value.length === 0 && !projectEventDue.value && pendingPersonalPlayers.value.length === 0,
+    () => planningReady.value && tasksWithoutLead.value.length === 0 && !projectEventDue.value && pendingPersonalPlayers.value.length === 0,
   )
   return {
     state, notice, tasks, events, taskOf, usedDays, candidatesFor, boardTask,
     remainingDays: (playerId: string) => state.value.players.find((p) => p.id === playerId)!.workdayCapacity - usedDays(playerId),
     gameFinished: computed(() => state.value.phase > 2),
-    personalEventsDrawn, projectEventDue, pendingPersonalPlayers, guide, canEndWeek,
-    plan, lead, support, work, learn, handoff, urgent, investigate, resolveIncident, extinguish, drawEvent, nextWeek, reset,
+    personalEventsDrawn, projectEventDue, pendingPersonalPlayers, marketTasks, planningReady, guide, canEndWeek,
+    plan, unplan, lead, support, work, learn, rest, handoff, urgent, investigate, resolveIncident, extinguish, drawEvent, nextWeek, reset,
   }
 }
