@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   allocateV7Workdays,
   allocateV7Learning,
+  allocateV7Rest,
   assignV7Lead,
   assignV7Support,
   createV7State,
@@ -13,6 +14,7 @@ import {
   resolveV7Incident,
   scheduleV7Handoff,
   triggerV7Event,
+  unplanV7Task,
   urgentV7Handoff,
   type V7State,
 } from '../src'
@@ -71,10 +73,31 @@ function planned(): V7State {
 }
 
 describe('v7 計画: 成果物枠へタスクタイルを選ぶ', () => {
-  it('同じ成果物枠には候補を1枚だけ置く', () => {
-    const next = ok(planV7Task(state(), 'interview'))
-    const result = planV7Task(next, 'survey')
+  it('同じ成果物へ至る複数タスクを並行して計画できる', () => {
+    let next = ok(planV7Task(state(), 'interview'))
+    next = ok(planV7Task(next, 'survey'))
+    expect(next.board.map((task) => task.taskId)).toEqual(['interview', 'survey'])
+  })
+
+  it('未着手なら市場へ戻せるが、担当決定後は戻せない', () => {
+    let next = ok(planV7Task(state(), 'interview'))
+    next = ok(unplanV7Task(next, 'interview'))
+    expect(next.board).toHaveLength(0)
+    next = ok(planV7Task(next, 'interview'))
+    next = ok(assignV7Lead(next, 'a', 'interview'))
+    const result = unplanV7Task(next, 'interview')
     expect(isRuleViolation(result) && result.code).toBe('INVALID_TARGET')
+  })
+
+  it('主担当はタイルに印刷された必要スキルを満たす', () => {
+    let next = createV7State({
+      players: [{ id: 'a', name: 'A', skills: { direction: 1, design: 1, engineering: 1 } }],
+      slots: [{ id: 'requirements', name: '要件' }],
+      tasks: [{ id: 'expert', name: '専門調査', slotId: 'requirements', skill: 'direction', requiredSkillLevel: 2, effort: 2, prerequisiteSlotIds: [] }],
+    })
+    next = ok(planV7Task(next, 'expert'))
+    const result = assignV7Lead(next, 'a', 'expert')
+    expect(isRuleViolation(result) && result.code).toBe('NOT_ASSIGNED')
   })
 
   it('前提成果物が完成するまで後続タスクへ工数を置けない', () => {
@@ -236,5 +259,32 @@ describe('v7 成長と資産・負債', () => {
     expect(next.availableTiles.some((tile) => tile.kind === 'asset')).toBe(true)
     expect(next.availableTiles.some((tile) => tile.kind === 'debt')).toBe(true)
     expect(next.availableTiles.every((tile) => tile.source.length > 0)).toBe(true)
+  })
+})
+
+describe('v7 個人ボード: 予算と疲労', () => {
+  it('作業した週は疲労し、1営業日の休憩で回復する', () => {
+    let next = planned()
+    next = ok(assignV7Lead(next, 'a', 'interview'))
+    next = ok(allocateV7Workdays(next, 'a', 'interview', 1))
+    next = resolveV7Week(next)
+    expect(next.players.find((player) => player.id === 'a')?.fatigue).toBe(1)
+
+    next = ok(allocateV7Rest(next, 'a'))
+    expect(next.players.find((player) => player.id === 'a')?.fatigue).toBe(0)
+    expect(next.allocations.find((allocation) => allocation.kind === 'rest')?.days).toBe(1)
+  })
+
+  it('タスク完成時に定義された予算を支払う', () => {
+    let next = createV7State({
+      players: [{ id: 'a', name: 'A', skills: { direction: 2, design: 1, engineering: 0 } }],
+      slots: [{ id: 'requirements', name: '要件' }],
+      tasks: [{ id: 'paid', name: '有償調査', slotId: 'requirements', skill: 'direction', effort: 1, prerequisiteSlotIds: [], cost: 2 }],
+    })
+    next = ok(planV7Task(next, 'paid'))
+    next = ok(assignV7Lead(next, 'a', 'paid'))
+    next = ok(allocateV7Workdays(next, 'a', 'paid', 1))
+    next = resolveV7Week(next)
+    expect(next.budget).toBe(next.config.initialBudget - 2)
   })
 })

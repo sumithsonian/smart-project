@@ -9,6 +9,10 @@ export interface V7Config {
   fireSpreadThreshold: number
   learningCostTo4: number
   learningCostTo5: number
+  initialBudget: number
+  fatigueMax: number
+  restRecovery: number
+  activeTaskLimit: number
 }
 
 export const V7_DEFAULT_CONFIG: V7Config = {
@@ -19,6 +23,10 @@ export const V7_DEFAULT_CONFIG: V7Config = {
   fireSpreadThreshold: 3,
   learningCostTo4: 2,
   learningCostTo5: 3,
+  initialBudget: 12,
+  fatigueMax: 4,
+  restRecovery: 2,
+  activeTaskLimit: 4,
 }
 
 export interface V7PlayerInput {
@@ -32,6 +40,7 @@ export interface V7Player extends V7PlayerInput {
   workdayCapacity: number
   learningProgress: number
   pendingCapacityGain: number
+  fatigue: number
 }
 
 export interface V7DeliverableSlot {
@@ -46,10 +55,16 @@ export interface V7TaskDefinition {
   /** 埋める成果物枠 */
   slotId: string
   skill: SkillKind
+  /** 主担当に必要なスキルレベル。 */
+  requiredSkillLevel?: number
   effort: number
   prerequisiteSlotIds: string[]
   /** 完成品質。Lv2は次フェーズに資産を残す。 */
   quality?: 1 | 2
+  /** 完成時に支払う外部費用。 */
+  cost?: number
+  /** その週に着手した担当者へ加わる疲労。 */
+  fatigue?: 1 | 2
 }
 
 export type V7TaskStatus = 'planned' | 'active' | 'completed'
@@ -68,7 +83,7 @@ export interface V7WorkAllocation {
   playerId: string
   taskId: string
   days: number
-  kind: 'work' | 'handoff' | 'urgent_handoff' | 'learning' | 'incident' | 'fire'
+  kind: 'work' | 'handoff' | 'urgent_handoff' | 'learning' | 'incident' | 'fire' | 'rest'
 }
 
 export interface V7PendingHandoff {
@@ -143,5 +158,6 @@ export interface V7State {
   availableTiles: V7CarryoverTile[]
   metrics: V7Metrics
   cs: number
+  budget: number
   log: string[]
 }

@@ -31,6 +31,7 @@ export function createV7State(input: {
       workdayCapacity: config.initialWorkdays,
       learningProgress: 0,
       pendingCapacityGain: 0,
+      fatigue: 0,
     })),
     taskDefinitions: input.tasks,
     slots: input.slots.map((slot) => ({ ...slot, completedByTaskId: null })),
@@ -49,6 +50,7 @@ export function createV7State(input: {
       parallelWorkWeeks: 0,
     },
     cs: 5,
+    budget: config.initialBudget,
     log: [],
   }
 }
@@ -99,8 +101,8 @@ export function planV7Task(state: V7State, taskId: string): V7Result {
   if (state.slots.find((slot) => slot.id === definition.slotId)?.completedByTaskId) {
     return violation('INVALID_TARGET', 'この成果物枠はすでに完成しています。')
   }
-  if (state.board.some((task) => task.slotId === definition.slotId && task.status !== 'completed')) {
-    return violation('INVALID_TARGET', 'この成果物枠にはすでに別のタスクを計画しています。')
+  if (state.board.filter((task) => task.status !== 'completed').length >= state.config.activeTaskLimit) {
+    return violation('LIMIT_REACHED', `同時に計画できるタスクは${state.config.activeTaskLimit}件までです。`)
   }
   if (!state.slots.some((slot) => slot.id === definition.slotId)) {
     return violation('NOT_FOUND', `成果物枠が見つかりません: ${definition.slotId}`)
@@ -123,6 +125,20 @@ export function planV7Task(state: V7State, taskId: string): V7Result {
   }
 }
 
+/** 未着手のタスクを計画から市場へ戻す。 */
+export function unplanV7Task(state: V7State, taskId: string): V7Result {
+  const task = boardTask(state, taskId)
+  if (!task) return violation('NOT_FOUND', `計画上のタスクが見つかりません: ${taskId}`)
+  if (task.progress > 0 || task.leadPlayerId || task.supportPlayerId) {
+    return violation('INVALID_TARGET', '担当決定または着手後のタスクは市場へ戻せません。')
+  }
+  return {
+    ...state,
+    board: state.board.filter((candidate) => candidate.taskId !== taskId),
+    log: [...state.log, `↩「${taskId}」をタスク市場へ戻した`],
+  }
+}
+
 function hasRole(state: V7State, playerId: string, role: 'lead' | 'support'): boolean {
   return state.board.some((task) =>
     role === 'lead' ? task.leadPlayerId === playerId : task.supportPlayerId === playerId,
@@ -131,7 +147,8 @@ function hasRole(state: V7State, playerId: string, role: 'lead' | 'support'): bo
 
 /** 初回着手前のタスクへ主担当を決める。 */
 export function assignV7Lead(state: V7State, playerId: string, taskId: string): V7Result {
-  if (!state.players.some((player) => player.id === playerId)) {
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player) {
     return violation('PLAYER_NOT_FOUND', `プレイヤーが見つかりません: ${playerId}`)
   }
   const task = boardTask(state, taskId)
@@ -140,6 +157,13 @@ export function assignV7Lead(state: V7State, playerId: string, taskId: string): 
   if (task.leadPlayerId) return violation('ALREADY_ASSIGNED', '主担当はすでに決まっています。')
   if (hasRole(state, playerId, 'lead')) {
     return violation('LIMIT_REACHED', '主担当は同時に1タスクまでです。')
+  }
+  const definition = taskDefinition(state, taskId)
+  if (definition && player.skills[definition.skill] < (definition.requiredSkillLevel ?? 1)) {
+    return violation(
+      'NOT_ASSIGNED',
+      `主担当には${definition.skill} Lv${definition.requiredSkillLevel ?? 1}が必要です。`,
+    )
   }
   return {
     ...state,
@@ -307,6 +331,24 @@ export function allocateV7Learning(state: V7State, playerId: string, days: numbe
     ),
     metrics: { ...reserved.metrics, learningDays: reserved.metrics.learningDays + days },
     log: unlock ? [...reserved.log, `📚 ${player.name}は次週から営業日+1`] : reserved.log,
+  }
+}
+
+/** 1営業日を休憩へ使い、疲労を回復する。 */
+export function allocateV7Rest(state: V7State, playerId: string): V7Result {
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player) return violation('PLAYER_NOT_FOUND', `プレイヤーが見つかりません: ${playerId}`)
+  if (player.fatigue <= 0) return violation('INVALID_TARGET', '疲労がないため休憩は不要です。')
+  const reserved = reserveDays(state, playerId, 'rest', 1, 'rest')
+  if ('type' in reserved) return reserved
+  return {
+    ...reserved,
+    players: reserved.players.map((candidate) =>
+      candidate.id === playerId
+        ? { ...candidate, fatigue: Math.max(0, candidate.fatigue - state.config.restRecovery) }
+        : candidate,
+    ),
+    log: [...reserved.log, `☕ ${player.name}が休憩し、疲労を回復`],
   }
 }
 
@@ -486,6 +528,7 @@ export function resolveV7Week(state: V7State): V7State {
   let board = state.board.map((task) => ({ ...task }))
   const log = [...state.log]
   let cs = state.cs
+  let budget = state.budget
 
   for (const task of board) {
     const definition = taskDefinition(state, task.taskId)
@@ -509,6 +552,7 @@ export function resolveV7Week(state: V7State): V7State {
     const effectiveEffort = Math.max(1, definition.effort + carryoverModifier)
     task.status = task.progress >= effectiveEffort ? 'completed' : 'active'
     if (task.status === 'completed') {
+      budget -= definition.cost ?? 0
       task.leadPlayerId = null
       task.supportPlayerId = null
       log.push(`✅「${definition.name}」が完成`)
@@ -637,14 +681,25 @@ export function resolveV7Week(state: V7State): V7State {
       phaseEnded && state.phase < 2
         ? slots.map((slot) => ({ ...slot, completedByTaskId: null }))
         : slots,
-    players: state.players.map((player) => ({
-      ...player,
-      workdayCapacity: Math.min(
-        state.config.maxWorkdays,
-        player.workdayCapacity + player.pendingCapacityGain,
-      ),
-      pendingCapacityGain: 0,
-    })),
+    players: state.players.map((player) => {
+      const workedDefinitions = state.allocations
+        .filter((allocation) => allocation.playerId === player.id && allocation.kind === 'work')
+        .map((allocation) => taskDefinition(state, allocation.taskId))
+        .filter((definition): definition is V7TaskDefinition => Boolean(definition))
+      const weeklyFatigue = workedDefinitions.reduce(
+        (highest, definition) => Math.max(highest, definition.fatigue ?? 1),
+        0,
+      )
+      return {
+        ...player,
+        workdayCapacity: Math.min(
+          state.config.maxWorkdays,
+          player.workdayCapacity + player.pendingCapacityGain,
+        ),
+        pendingCapacityGain: 0,
+        fatigue: Math.min(state.config.fatigueMax, player.fatigue + weeklyFatigue),
+      }
+    }),
     allocations: [],
     pendingHandoffs: [],
     emergencyResponseCredits: {},
@@ -652,6 +707,7 @@ export function resolveV7Week(state: V7State): V7State {
     carryoverDeck,
     availableTiles,
     cs,
+    budget,
     metrics: {
       ...state.metrics,
       parallelWorkWeeks: state.metrics.parallelWorkWeeks + (workedTaskCount > 1 ? 1 : 0),
