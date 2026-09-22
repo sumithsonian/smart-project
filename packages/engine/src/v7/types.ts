@@ -13,6 +13,7 @@ export interface V7Config {
   fatigueMax: number
   restRecovery: number
   activeTaskLimit: number
+  totalPhases: number
 }
 
 export const V7_DEFAULT_CONFIG: V7Config = {
@@ -27,6 +28,7 @@ export const V7_DEFAULT_CONFIG: V7Config = {
   fatigueMax: 4,
   restRecovery: 2,
   activeTaskLimit: 4,
+  totalPhases: 4,
 }
 
 export interface V7PlayerInput {
@@ -46,12 +48,16 @@ export interface V7Player extends V7PlayerInput {
 export interface V7DeliverableSlot {
   id: string
   name: string
+  /** 実務プロジェクト上のフェーズ。省略時はフェーズ1。 */
+  phase?: number
   completedByTaskId: string | null
 }
 
 export interface V7TaskDefinition {
   id: string
   name: string
+  /** 実務プロジェクト上のフェーズ。省略時はフェーズ1。 */
+  phase?: number
   /** 埋める成果物枠 */
   slotId: string
   skill: SkillKind

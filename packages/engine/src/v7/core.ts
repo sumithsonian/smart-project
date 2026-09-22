@@ -18,7 +18,7 @@ export type V7Result = V7State | RuleViolation
 export function createV7State(input: {
   players: V7PlayerInput[]
   tasks: V7TaskDefinition[]
-  slots: Array<Pick<V7DeliverableSlot, 'id' | 'name'>>
+  slots: Array<Pick<V7DeliverableSlot, 'id' | 'name' | 'phase'>>
   config?: Partial<V7Config>
 }): V7State {
   const config = { ...V7_DEFAULT_CONFIG, ...input.config }
@@ -623,7 +623,7 @@ export function resolveV7Week(state: V7State): V7State {
   const phaseEnded = nextPhase !== state.phase
   let carryoverDeck = state.carryoverDeck
   let availableTiles = state.availableTiles
-  if (phaseEnded && state.phase < 2) {
+  if (phaseEnded && state.phase < state.config.totalPhases) {
     const generated: V7CarryoverTile[] = board.flatMap<V7CarryoverTile>((task) => {
       const definition = taskDefinition(state, task.taskId)
       if (!definition) return []
@@ -676,11 +676,9 @@ export function resolveV7Week(state: V7State): V7State {
     ...state,
     phase: nextPhase,
     week: nextWeek,
-    board: phaseEnded && state.phase < 2 ? [] : board,
-    slots:
-      phaseEnded && state.phase < 2
-        ? slots.map((slot) => ({ ...slot, completedByTaskId: null }))
-        : slots,
+    board: phaseEnded && state.phase < state.config.totalPhases ? [] : board,
+    // 完成成果物は後続フェーズの前提として残す。
+    slots,
     players: state.players.map((player) => {
       const workedDefinitions = state.allocations
         .filter((allocation) => allocation.playerId === player.id && allocation.kind === 'work')
@@ -703,7 +701,7 @@ export function resolveV7Week(state: V7State): V7State {
     allocations: [],
     pendingHandoffs: [],
     emergencyResponseCredits: {},
-    incidents: phaseEnded && state.phase < 2 ? [] : incidents,
+    incidents: phaseEnded && state.phase < state.config.totalPhases ? [] : incidents,
     carryoverDeck,
     availableTiles,
     cs,
