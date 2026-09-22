@@ -13,6 +13,16 @@ const selectedPlayerData = computed(() => state.value.players.find((player) => p
 const selectedLeadTask = computed(() => state.value.board.find((task) => task.leadPlayerId === selectedPlayer.value))
 const selectedSupportTask = computed(() => state.value.board.find((task) => task.supportPlayerId === selectedPlayer.value))
 const showDirector = ref(true)
+const educationMode = ref(true)
+const showEducation = ref(true)
+const phaseLessons = [
+  { phase: 1, icon: '🧭', title: '企画・要件定義', realWork: '顧客・利用者・事業の状況を調べ、何を作るか、どこまで作るかを合意します。', gameMapping: '調査やヒアリングのタイルから情報を集め、要件合意につながるタイルを解放します。', decision: '短い調査で早く合意するか、人日と予算を使って不確実性を減らすか。', outputs: ['顧客理解', 'スコープ仮説', '要件合意'] },
+  { phase: 2, icon: '🎨', title: '設計・デザイン', realWork: '要件を情報構造・画面・操作へ変換し、実装できる仕様まで具体化します。', gameMapping: '情報設計、プロトタイプ、デザインシステムなどを選び、後工程の手戻りを抑える資産を作ります。', decision: '検証を厚くするか、仕様を早く固めて開発へ渡すか。', outputs: ['情報構造', '体験設計', 'UI仕様'] },
+  { phase: 3, icon: '⚙️', title: '開発', realWork: '設計をコードとCMSへ落とし込み、複数の機能を結合して動く成果物にします。', gameMapping: '技術基盤・画面実装・外部連携を並行させます。前工程の資産と負債が必要人日に影響します。', decision: '基盤を先に固めるか、見える画面を急ぐか。専門家をどこへ集中させるか。', outputs: ['技術基盤', '実装成果', '結合済み成果物'] },
+  { phase: 4, icon: '🚀', title: 'テスト・公開', realWork: '品質を確認し、不具合を直し、顧客の受入判断を経て公開・運用へ引き継ぎます。', gameMapping: '機能・性能・使いやすさを異なるタイルで検証し、残った炎上と納期を見ながら公開判定します。', decision: 'どのリスクを検証し、どこまで直して公開するか。', outputs: ['品質確認', '受入確認', '公開・引き継ぎ'] },
+]
+const currentPhaseLesson = computed(() => phaseLessons.find((lesson) => lesson.phase === state.value.phase))
+const currentPhaseSlots = computed(() => state.value.slots.filter((slot) => (slot.phase ?? 1) === state.value.phase))
 const currentLeadTask = computed(() => state.value.board.find((task) => task.status !== 'completed' && !task.leadPlayerId))
 const currentPersonalPlayer = computed(() => state.value.players.find((player) => !personalEventsDrawn.value.includes(player.id)))
 const canLeadCurrentTask = (playerId: string) => {
@@ -24,10 +34,30 @@ const canLeadCurrentTask = (playerId: string) => {
     && player.skills[definition.skill] >= (definition.requiredSkillLevel ?? 1)
 }
 watch(() => guide.value.step, () => { showDirector.value = true })
+watch(() => state.value.phase, (phase, previous) => {
+  if (phase !== previous && educationMode.value && phase <= state.value.config.totalPhases) showEducation.value = true
+})
+watch(educationMode, (enabled) => {
+  if (import.meta.client) localStorage.setItem('smart-project-education-mode', enabled ? 'on' : 'off')
+  showEducation.value = enabled
+})
+onMounted(() => {
+  const saved = localStorage.getItem('smart-project-education-mode')
+  if (saved === 'off') {
+    educationMode.value = false
+    showEducation.value = false
+  }
+})
 
 function startAllocation() {
   showDirector.value = false
   selectedPlayer.value = state.value.players.find((player) => remainingDays(player.id) > 0)?.id ?? 'a'
+}
+
+function restartGame() {
+  reset()
+  showDirector.value = true
+  showEducation.value = educationMode.value
 }
 </script>
 
@@ -36,11 +66,11 @@ function startAllocation() {
     <header class="topbar">
       <div class="brand"><strong>SMART PROJECT</strong><span>v7 CORE PROTOTYPE</span></div>
       <div class="round-strip">
-        <b>PHASE {{ Math.min(state.phase, 2) }}<small>/ 2</small></b>
+        <b>PHASE {{ Math.min(state.phase, state.config.totalPhases) }}<small>/ {{ state.config.totalPhases }}</small></b>
         <b>WEEK {{ state.week }}<small>/ 3</small></b>
         <b class="cs">CS {{ state.cs }}</b><b class="budget">予算 {{ state.budget }}</b>
       </div>
-      <div class="top-actions"><button class="quiet" @click="showDirector = true">? 今やること</button><button class="quiet" @click="reset">↻ リセット</button></div>
+      <div class="top-actions"><button :class="['quiet', 'education-toggle', { active: educationMode }]" @click="educationMode = !educationMode">🎓 教育 {{ educationMode ? 'ON' : 'OFF' }}</button><button v-if="educationMode" class="quiet" @click="showEducation = true">フェーズ解説</button><button class="quiet" @click="showDirector = true">? 今やること</button><button class="quiet" @click="restartGame">↻ リセット</button></div>
     </header>
 
     <section class="navigator">
@@ -91,7 +121,7 @@ function startAllocation() {
 
       <section class="task-workspace panel">
         <div class="outcome-strip">
-          <div v-for="slot in state.slots" :key="slot.id" :class="{ completed: slot.completedByTaskId }"><span>{{ slot.completedByTaskId ? '✓' : '○' }}</span><b>{{ slot.name }}</b><small>{{ slot.completedByTaskId ? '成果あり' : '未達' }}</small></div>
+          <div v-for="slot in currentPhaseSlots" :key="slot.id" :class="{ completed: slot.completedByTaskId }"><span>{{ slot.completedByTaskId ? '✓' : '○' }}</span><b>{{ slot.name }}</b><small>{{ slot.completedByTaskId ? '成果あり' : '未達' }}</small></div>
         </div>
         <div class="planned-area">
           <div class="workspace-heading"><div><strong>今週の計画</strong><small>最大{{ state.config.activeTaskLimit }}枚・複数タスクを並行できます</small></div><b>{{ state.board.filter(task => task.status !== 'completed').length }} / {{ state.config.activeTaskLimit }}</b></div>
@@ -141,7 +171,7 @@ function startAllocation() {
 
     <div v-if="showDirector" class="director-backdrop">
       <section class="director" role="dialog" aria-modal="true" :aria-label="guide.title">
-        <header><span>PHASE {{ Math.min(state.phase, 2) }}・WEEK {{ state.week }}</span><b>STEP {{ guide.step }} / 6</b></header>
+        <header><span>PHASE {{ Math.min(state.phase, state.config.totalPhases) }}・WEEK {{ state.week }}</span><b>STEP {{ guide.step }} / 6</b></header>
 
         <template v-if="guide.step === 1">
           <div class="director-kicker">今回決めること</div>
@@ -189,8 +219,24 @@ function startAllocation() {
         </template>
 
         <template v-else>
-          <div class="director-icon">🏁</div><h1>2フェーズの試作完了</h1><p>右側のプレイ指標を見て、迷った判断や使わなかった仕組みを振り返ってください。</p><button class="director-primary" @click="showDirector = false">結果を見る</button>
+          <div class="director-icon">🏁</div><h1>4フェーズのプロジェクト完了</h1><p>右側のプレイ指標を見て、計画・人員配置・炎上対応で迷った判断を振り返ってください。</p><button class="director-primary" @click="showDirector = false">結果を見る</button>
         </template>
+      </section>
+    </div>
+
+    <div v-if="educationMode && showEducation && currentPhaseLesson" class="education-backdrop">
+      <section class="education-dialog" role="dialog" aria-modal="true" :aria-label="`${currentPhaseLesson.title}の解説`">
+        <header><span>EDUCATION MODE</span><b>PHASE {{ currentPhaseLesson.phase }} / {{ state.config.totalPhases }}</b></header>
+        <div class="phase-ribbon"><i v-for="lesson in phaseLessons" :key="lesson.phase" :class="{ current: lesson.phase === state.phase, done: lesson.phase < state.phase }"><span>{{ lesson.icon }}</span><b>{{ lesson.title }}</b></i></div>
+        <div class="education-title"><span>{{ currentPhaseLesson.icon }}</span><div><small>このフェーズで体験すること</small><h1>{{ currentPhaseLesson.title }}</h1></div></div>
+        <div class="education-cards">
+          <article><b>実務では</b><p>{{ currentPhaseLesson.realWork }}</p></article>
+          <article><b>ボドゲでは</b><p>{{ currentPhaseLesson.gameMapping }}</p></article>
+          <article><b>判断のジレンマ</b><p>{{ currentPhaseLesson.decision }}</p></article>
+        </div>
+        <div class="education-flow"><span v-for="(output, index) in currentPhaseLesson.outputs" :key="output"><i>{{ index + 1 }}</i><b>{{ output }}</b></span></div>
+        <button class="education-primary" @click="showEducation = false">理解してフェーズを始める →</button>
+        <small>教育モードは右上からいつでもOFFにできます。フェーズ解説も再表示できます。</small>
       </section>
     </div>
   </main>
@@ -202,4 +248,6 @@ function startAllocation() {
 @media(max-width:1050px){.game-screen{height:auto;min-height:100dvh;overflow:auto;display:block;padding-bottom:72px}.topbar{height:54px;position:sticky;top:0;z-index:10}.round-strip b{padding:0 8px}.navigator{grid-template-columns:auto 1fr;position:sticky;top:54px;z-index:9}.step-dots,.notice{display:none}.game-board{display:block;padding:8px}.member-rail{display:block}.task-workspace{margin-top:8px;overflow:visible}.tile-grid,.market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.info-rail{display:grid;grid-template-columns:1fr 1fr;margin-top:8px}.metrics-panel{grid-column:1/-1}.actionbar{position:fixed;bottom:0;left:0;right:0;z-index:10;grid-template-columns:1fr auto}.actionbar p{display:none}.brand span{display:none}.allocation-options{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.tile-grid,.market-grid{grid-template-columns:1fr}.round-strip .budget{display:none}.outcome-strip{grid-template-columns:1fr}.team-list{grid-template-columns:1fr 1fr}}
 .director-members button:disabled{opacity:.38;cursor:not-allowed}.director-members button em{font-size:7px;color:#8b3c32;font-style:normal}
+.education-toggle.active{border-color:#d8aa45;background:#3e341c;color:#ffe09a}.education-backdrop{position:fixed;inset:0;z-index:120;background:#07100ce8;backdrop-filter:blur(5px);display:grid;place-items:center;padding:20px}.education-dialog{width:min(820px,calc(100vw - 30px));max-height:calc(100dvh - 30px);overflow:auto;background:#f4eddd;color:#292820;border-radius:16px;border:1px solid #d5bb7d;box-shadow:0 28px 90px #000c;padding:0 34px 28px;text-align:center}.education-dialog>header{margin:0 -34px 18px;padding:12px 18px;background:#1f3d31;color:#fff;display:flex;justify-content:space-between;font-size:10px;letter-spacing:.1em}.phase-ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:20px}.phase-ribbon i{font-style:normal;background:#d8d0c0;color:#777;border-radius:7px;padding:7px 3px;display:grid;place-items:center;gap:2px}.phase-ribbon i.current{background:#d8aa45;color:#241c0c;box-shadow:0 3px 0 #9d741c}.phase-ribbon i.done{background:#aac9b1;color:#264d32}.phase-ribbon span{font-size:16px}.phase-ribbon b{font-size:8px}.education-title{display:flex;justify-content:center;align-items:center;gap:12px;margin:5px 0 18px}.education-title>span{font-size:46px}.education-title div{text-align:left}.education-title small{font-size:9px;color:#96701d;letter-spacing:.12em;font-weight:900}.education-title h1{font-size:29px;margin:2px 0}.education-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;text-align:left}.education-cards article{background:#e5ddcb;border-top:4px solid #496f5d;border-radius:7px;padding:13px}.education-cards article:nth-child(2){border-color:#b38629}.education-cards article:nth-child(3){border-color:#9b493e}.education-cards b{font-size:11px}.education-cards p{font-size:10px;line-height:1.65;color:#58584f;margin:6px 0 0}.education-flow{display:flex;justify-content:center;align-items:center;gap:20px;margin:20px 0}.education-flow span{position:relative;display:flex;align-items:center;gap:5px;background:#fffaf0;border:1px solid #c7bda9;border-radius:20px;padding:6px 12px}.education-flow span:not(:last-child):after{content:'›';position:absolute;right:-15px;font-size:20px;color:#8b806d}.education-flow i{font-style:normal;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:#315c49;color:white;font-size:8px}.education-flow b{font-size:9px}.education-primary{display:block;margin:0 auto 10px;border:0;border-radius:9px;background:#d5a332;color:#241b08;padding:13px 28px;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 5px 0 #8a6515}.education-dialog>small{font-size:8px;color:#777}
+@media(max-width:720px){.education-dialog{padding:0 16px 22px}.education-dialog>header{margin:0 -16px 14px}.education-cards{grid-template-columns:1fr}.phase-ribbon b{display:none}.education-title h1{font-size:23px}.education-flow{gap:10px;flex-wrap:wrap}.education-flow span:not(:last-child):after{display:none}.top-actions .education-toggle{display:block}.top-actions button:nth-child(2){display:none}}
 </style>

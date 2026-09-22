@@ -288,3 +288,41 @@ describe('v7 個人ボード: 予算と疲労', () => {
     expect(next.budget).toBe(next.config.initialBudget - 2)
   })
 })
+
+describe('v7 実務4フェーズ', () => {
+  it('フェーズ終了後も完成成果物を後工程の前提として保持する', () => {
+    let next = createV7State({
+      players: [{ id: 'a', name: 'A', skills: { direction: 2, design: 1, engineering: 1 } }],
+      slots: [
+        { id: 'requirements', name: '要件合意', phase: 1 },
+        { id: 'design', name: '体験設計', phase: 2 },
+      ],
+      tasks: [
+        { id: 'agreement', name: '要件整理', phase: 1, slotId: 'requirements', skill: 'direction', effort: 1, prerequisiteSlotIds: [] },
+        { id: 'wireframe', name: 'ワイヤー', phase: 2, slotId: 'design', skill: 'design', effort: 1, prerequisiteSlotIds: ['requirements'] },
+      ],
+      config: { roundsPerPhase: 1, totalPhases: 4 },
+    })
+    next = ok(planV7Task(next, 'agreement'))
+    next = ok(assignV7Lead(next, 'a', 'agreement'))
+    next = ok(allocateV7Workdays(next, 'a', 'agreement', 1))
+    next = resolveV7Week(next)
+    expect(next.phase).toBe(2)
+    expect(next.slots.find((slot) => slot.id === 'requirements')?.completedByTaskId).toBe('agreement')
+
+    next = ok(planV7Task(next, 'wireframe'))
+    next = ok(assignV7Lead(next, 'a', 'wireframe'))
+    expect(isRuleViolation(allocateV7Workdays(next, 'a', 'wireframe', 1))).toBe(false)
+  })
+
+  it('4フェーズ終了後にフェーズ5へ進み完了状態になる', () => {
+    let next = createV7State({
+      players: [{ id: 'a', name: 'A', skills: { direction: 1, design: 1, engineering: 1 } }],
+      slots: [],
+      tasks: [],
+      config: { roundsPerPhase: 1, totalPhases: 4 },
+    })
+    for (let phase = 1; phase <= 4; phase++) next = resolveV7Week(next)
+    expect(next.phase).toBe(5)
+  })
+})
